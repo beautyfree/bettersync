@@ -1,12 +1,11 @@
 /**
  * @bettersync/drizzle-adapter
  *
- * SyncAdapter backed by Drizzle ORM + node-postgres.
- * Uses raw SQL via `db.execute(sql\`...\`)` since sync tables are dynamic
- * (defined by SyncSchema, not by Drizzle schema files).
+ * better-auth style: pass Drizzle table objects, get column mapping free.
  *
- * Postgres-specific in v0.1 (ON CONFLICT ... WHERE for atomic upsert).
+ *   import { projects, tasks } from './db/schema'
+ *   drizzleAdapter(db, { schema: { project: projects, task: tasks } })
  */
 
 export { drizzleAdapter } from './drizzle'
-export type { DrizzleAdapterOptions } from './drizzle'
+export type { DrizzleAdapterConfig } from './drizzle'

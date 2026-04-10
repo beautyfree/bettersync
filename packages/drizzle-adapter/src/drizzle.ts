@@ -1,29 +1,39 @@
 /**
- * Drizzle + Postgres SyncAdapter.
+ * Drizzle adapter — better-auth style.
  *
- * Uses Drizzle's sql tagged template for all queries — idiomatic,
- * parameterized, no string concatenation. Postgres-specific features:
- * - INSERT ... ON CONFLICT ... WHERE for atomic conditional upsert
- * - JSONB for tombstone scope storage
- * - (changed, id) compound comparison for cursor pagination
+ * Takes actual Drizzle table objects. Uses Drizzle query builder for
+ * CRUD (type-safe, column mapping is free). Raw SQL only for
+ * ON CONFLICT ... WHERE (upsertIfNewer) which Drizzle can't express.
+ *
+ * Usage:
+ *   import { projects, tasks } from './db/schema'
+ *   drizzleAdapter(db, {
+ *     schema: { project: projects, task: tasks },
+ *   })
  */
 
 import {
+  type AdapterCapabilities,
   type FindChangedSinceParams,
   type FindChangedSinceResult,
   type Row,
   type Scope,
   type SyncAdapter,
-  type SyncSchema,
   type Tombstone,
-  type AdapterCapabilities,
-  getModelTableName,
-  getPrimaryKey,
   shouldApplyTombstone,
   shouldDropAsResurrection,
 } from '@bettersync/core'
-import { sql, type SQL } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count as countFn,
+  eq,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
+import { getTableColumns, getTableName } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { PgTable } from 'drizzle-orm/pg-core'
 
 const CAPABILITIES: AdapterCapabilities = {
   adapterId: 'drizzle-pg',
@@ -37,320 +47,287 @@ const CAPABILITIES: AdapterCapabilities = {
   supportsCompoundComparison: true,
 }
 
-const TOMBSTONE_TABLE = 'sync_tombstones'
-
-export interface DrizzleAdapterOptions {
+export interface DrizzleAdapterConfig {
+  /**
+   * Map of model name → Drizzle table object.
+   * Column mapping comes for free from Drizzle definitions.
+   */
+  schema: Record<string, PgTable>
+  /** HLC field key in the table. Default: 'changed'. */
   hlcField?: string
+  /** Tombstone table name. Default: 'sync_tombstones'. */
+  tombstoneTable?: string
 }
 
 type DbLike = NodePgDatabase<Record<string, never>>
 
-export function drizzleAdapter(db: DbLike, opts: DrizzleAdapterOptions = {}): SyncAdapter {
-  const hlcField = opts.hlcField ?? 'changed'
-  let schema: SyncSchema | null = null
+export function drizzleAdapter(db: DbLike, config: DrizzleAdapterConfig): SyncAdapter {
+  const hlcField = config.hlcField ?? 'changed'
+  const tombTbl = config.tombstoneTable ?? 'sync_tombstones'
 
-  function s(): SyncSchema {
-    if (!schema) throw new Error('drizzleAdapter: call ensureSyncTables first')
-    return schema
+  function tbl(model: string): PgTable {
+    const t = config.schema[model]
+    if (!t) throw new Error(`drizzleAdapter: model "${model}" not in schema`)
+    return t
   }
 
-  function tbl(model: string): string {
-    const def = s()[model]
-    if (!def) throw new Error(`drizzleAdapter: unknown model "${model}"`)
-    return getModelTableName(model, def)
+  function cols(model: string) {
+    return getTableColumns(tbl(model))
   }
 
-  function pk(model: string): string {
-    return getPrimaryKey(model, s()[model]!)
+  function pkCol(model: string) {
+    const c = cols(model)
+    for (const col of Object.values(c)) {
+      if ((col as { primary?: boolean }).primary) return col
+    }
+    if ('id' in c) return c.id!
+    throw new Error(`drizzleAdapter: no PK on "${model}"`)
   }
 
-  function fields(model: string): string[] {
-    return Object.keys(s()[model]!.fields)
+  function hlcCol(model: string) {
+    const c = cols(model)
+    if (hlcField in c) return c[hlcField]!
+    throw new Error(`drizzleAdapter: HLC field "${hlcField}" not on "${model}"`)
   }
 
-  function ident(name: string) {
-    return sql.identifier(name)
+  function colName(col: unknown): string {
+    return (col as { name: string }).name
   }
 
-  function whereSql(where: Record<string, unknown> | undefined): SQL {
-    if (!where || Object.keys(where).length === 0) return sql`TRUE`
-    const parts = Object.entries(where).map(([k, v]) => sql`${ident(k)} = ${v}`)
-    return sql.join(parts, sql` AND `)
+  /** Build Drizzle WHERE from flat key-value object */
+  function whereEq(model: string, where?: Record<string, unknown>): SQL | undefined {
+    if (!where || Object.keys(where).length === 0) return undefined
+    const c = cols(model)
+    const parts: SQL[] = []
+    for (const [key, value] of Object.entries(where)) {
+      if (key in c) parts.push(eq(c[key]!, value))
+    }
+    return parts.length ? and(...parts) : undefined
   }
 
-  function buildInsert(table: string, row: Row, cols: string[]): SQL {
-    const colList = sql.join(cols.map(c => ident(c)), sql`, `)
-    const valList = sql.join(cols.map(c => sql`${row[c] ?? null}`), sql`, `)
-    return sql`INSERT INTO ${ident(table)} (${colList}) VALUES (${valList})`
-  }
-
-  async function exec(dbConn: DbLike, q: SQL): Promise<Row[]> {
-    const result = await dbConn.execute(q)
-    return result.rows as Row[]
-  }
-
-  function makeAdapter(dbConn: DbLike): SyncAdapter {
+  function makeAdapter(conn: DbLike): SyncAdapter {
     const adapter: SyncAdapter = {
       capabilities: CAPABILITIES,
 
-      async ensureSyncTables(s_) {
-        schema = s_
-        for (const [modelKey, def] of Object.entries(s_)) {
-          const table = getModelTableName(modelKey, def)
-          const pkName = getPrimaryKey(modelKey, def)
-          const colDefs: SQL[] = []
-          for (const [name, f] of Object.entries(def.fields)) {
-            const typ = sqlType(f.type)
-            const parts = [ident(name), sql.raw(typ)]
-            if (name === pkName) parts.push(sql.raw('PRIMARY KEY'))
-            else if (f.required !== false) parts.push(sql.raw('NOT NULL'))
-            colDefs.push(sql.join(parts, sql.raw(' ')))
-          }
-          // Only add HLC column if not already declared in field defs
-          if (!(hlcField in def.fields)) {
-            colDefs.push(sql.join([ident(hlcField), sql.raw('TEXT NOT NULL')], sql.raw(' ')))
-          }
-          const colsSql = sql.join(colDefs, sql.raw(', '))
-          await dbConn.execute(sql`CREATE TABLE IF NOT EXISTS ${ident(table)} (${colsSql})`)
-          await dbConn.execute(
-            sql.raw(`CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`)
-          )
-        }
-        // Tombstone table
-        await dbConn.execute(sql.raw(`
-          CREATE TABLE IF NOT EXISTS "${TOMBSTONE_TABLE}" (
-            model TEXT NOT NULL,
-            id TEXT NOT NULL,
-            hlc TEXT NOT NULL,
+      async ensureSyncTables() {
+        // User tables are managed by Drizzle migrations.
+        // We create sync-internal tables + indexes.
+        await conn.execute(sql.raw(`
+          CREATE TABLE IF NOT EXISTS "${tombTbl}" (
+            model TEXT NOT NULL, id TEXT NOT NULL, hlc TEXT NOT NULL,
             scope JSONB NOT NULL DEFAULT '{}',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (model, id)
           )
         `))
-        await dbConn.execute(
-          sql.raw(`CREATE INDEX IF NOT EXISTS "idx_tombstones_hlc" ON "${TOMBSTONE_TABLE}" (hlc)`)
-        )
+        await conn.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_${tombTbl}_hlc" ON "${tombTbl}" (hlc)`))
+
+        for (const modelKey of Object.keys(config.schema)) {
+          const table = tbl(modelKey)
+          const tn = getTableName(table)
+          const pk = colName(pkCol(modelKey))
+          const hlc = colName(hlcCol(modelKey))
+          await conn.execute(sql.raw(`CREATE INDEX IF NOT EXISTS "idx_${tn}_sync" ON "${tn}" ("${hlc}", "${pk}")`))
+        }
       },
+
+      // ─── CRUD via Drizzle query builder ─────────────────────
 
       async create({ model, data }) {
         const table = tbl(model)
-        const cols = [...new Set([...fields(model), hlcField])]
-        const q = sql`${buildInsert(table, data, cols)} RETURNING *`
-        const rows = await exec(dbConn, q)
-        return rows[0] ?? data
+        const result = await conn.insert(table).values(data as Record<string, unknown>).returning()
+        return (result[0] ?? data) as Row
       },
 
       async update({ model, where, update: patch }) {
         const table = tbl(model)
-        const entries = Object.entries(patch)
-        if (entries.length === 0) return null
-        const sets = entries.map(([k, v]) => sql`${ident(k)} = ${v}`)
-        const setSql = sql.join(sets, sql`, `)
-        const rows = await exec(
-          dbConn,
-          sql`UPDATE ${ident(table)} SET ${setSql} WHERE ${whereSql(where)} RETURNING *`,
-        )
-        return rows[0] ?? null
+        const w = whereEq(model, where)
+        const result = await conn.update(table).set(patch).where(w ?? sql`TRUE`).returning()
+        return (result[0] as Row) ?? null
       },
 
       async delete({ model, where }) {
-        await exec(dbConn, sql`DELETE FROM ${ident(tbl(model))} WHERE ${whereSql(where)}`)
+        const table = tbl(model)
+        const w = whereEq(model, where)
+        await conn.delete(table).where(w ?? sql`TRUE`)
       },
 
       async findOne({ model, where }) {
-        const rows = await exec(
-          dbConn,
-          sql`SELECT * FROM ${ident(tbl(model))} WHERE ${whereSql(where)} LIMIT 1`,
-        )
-        return rows[0] ?? null
+        const table = tbl(model)
+        const w = whereEq(model, where)
+        const rows = await conn.select().from(table).where(w ?? sql`TRUE`).limit(1)
+        return (rows[0] as Row) ?? null
       },
 
       async findMany({ model, where, limit: lim, offset: off, sortBy }) {
-        let q = sql`SELECT * FROM ${ident(tbl(model))} WHERE ${whereSql(where)}`
+        const table = tbl(model)
+        const w = whereEq(model, where)
+        let q = conn.select().from(table).where(w ?? sql`TRUE`).$dynamic()
         if (sortBy) {
-          const order = Object.entries(sortBy).map(([k, dir]) =>
-            sql`${ident(k)} ${sql.raw(dir.toUpperCase())}`,
-          )
-          q = sql`${q} ORDER BY ${sql.join(order, sql`, `)}`
+          const c = cols(model)
+          for (const [field] of Object.entries(sortBy)) {
+            if (field in c) q = q.orderBy(asc(c[field]!))
+          }
         }
-        if (lim != null) q = sql`${q} LIMIT ${lim}`
-        if (off != null && off > 0) q = sql`${q} OFFSET ${off}`
-        return exec(dbConn, q)
+        if (lim != null) q = q.limit(lim)
+        if (off != null && off > 0) q = q.offset(off)
+        return (await q) as Row[]
       },
 
       async count({ model, where }) {
-        const rows = await exec(
-          dbConn,
-          sql`SELECT COUNT(*)::int AS count FROM ${ident(tbl(model))} WHERE ${whereSql(where)}`,
-        )
-        return ((rows[0] as { count: number })?.count) ?? 0
+        const table = tbl(model)
+        const w = whereEq(model, where)
+        const result = await conn.select({ count: countFn() }).from(table).where(w ?? sql`TRUE`)
+        return result[0]?.count ?? 0
       },
+
+      // ─── Sync-specific (raw SQL for compound ops) ──────────
 
       async findChangedSince(params: FindChangedSinceParams): Promise<FindChangedSinceResult> {
         const { model, sinceHlc, limit: lim, cursor, scope } = params
-        const table = tbl(model)
-        const pkName = pk(model)
-        const conditions: SQL[] = []
+        const tn = getTableName(tbl(model))
+        const pk = colName(pkCol(model))
+        const hlc = colName(hlcCol(model))
+        const c = cols(model)
+
+        const conds: string[] = []
+        const vals: unknown[] = []
+        let idx = 1
 
         if (scope) {
-          for (const [k, v] of Object.entries(scope)) {
-            conditions.push(sql`${ident(k)} = ${v}`)
+          for (const [key, value] of Object.entries(scope)) {
+            if (key in c) {
+              conds.push(`"${colName(c[key]!)}" = $${idx++}`)
+              vals.push(value)
+            }
           }
         }
-
         if (cursor) {
-          conditions.push(
-            sql`(${ident(hlcField)}, ${ident(pkName)}) > (${cursor.hlc}, ${cursor.id})`,
-          )
+          conds.push(`("${hlc}", "${pk}") > ($${idx}, $${idx + 1})`)
+          vals.push(cursor.hlc, cursor.id)
+          idx += 2
         } else {
-          conditions.push(sql`${ident(hlcField)} > ${sinceHlc}`)
+          conds.push(`"${hlc}" > $${idx++}`)
+          vals.push(sinceHlc)
         }
 
-        const where = sql.join(conditions, sql` AND `)
-        const fetchLimit = lim + 1
-        const rows = await exec(
-          dbConn,
-          sql`SELECT * FROM ${ident(table)} WHERE ${where} ORDER BY ${ident(hlcField)} ASC, ${ident(pkName)} ASC LIMIT ${fetchLimit}`,
+        const where = conds.join(' AND ')
+        const result = await conn.execute(
+          paramSql(`SELECT * FROM "${tn}" WHERE ${where} ORDER BY "${hlc}" ASC, "${pk}" ASC LIMIT ${lim + 1}`, vals),
         )
-
+        const rows = (result.rows ?? []) as Row[]
         const hasMore = rows.length > lim
         const page = hasMore ? rows.slice(0, lim) : rows
-        const result: FindChangedSinceResult = { rows: page }
+
+        // Map column names back to JS field names
+        const colMap = cols(model)
+        const mapped = page.map((row) => mapColumnsToFields(row, colMap))
+
+        const out: FindChangedSinceResult = { rows: mapped }
         if (hasMore && page.length > 0) {
           const last = page[page.length - 1]!
-          result.nextCursor = {
-            hlc: String(last[hlcField]),
-            id: String(last[pkName]),
-          }
+          out.nextCursor = { hlc: String(last[hlc]), id: String(last[pk]) }
         }
-        return result
+        return out
       },
 
       async upsertIfNewer({ model, row }) {
-        const table = tbl(model)
-        const pkName = pk(model)
-        const id = String(row[pkName])
-        const rowHlc = String(row[hlcField])
+        const tn = getTableName(tbl(model))
+        const c = cols(model)
+        const pk = colName(pkCol(model))
+        const hlc = colName(hlcCol(model))
+
+        // Map JS field names → SQL column values
+        const colEntries = Object.entries(c)
+        const id = row.id ?? row[pk]
+        const rowHlc = row[hlcField] ?? row[hlc]
+        if (!id || !rowHlc) throw new Error('upsertIfNewer: row must have id and HLC')
 
         // Resurrection check
-        const tombRows = await exec(
-          dbConn,
-          sql`SELECT hlc FROM ${ident(TOMBSTONE_TABLE)} WHERE model = ${model} AND id = ${id}`,
+        const tombResult = await conn.execute(
+          sql`SELECT hlc FROM ${sql.identifier(tombTbl)} WHERE model = ${model} AND id = ${String(id)}`,
         )
-        const tombHlc = tombRows.length > 0 ? String(tombRows[0]!.hlc) : null
-        if (shouldDropAsResurrection(tombHlc, rowHlc)) return 'skipped'
+        const tombHlc = ((tombResult.rows ?? []) as Row[])[0]?.hlc
+        if (shouldDropAsResurrection(tombHlc ? String(tombHlc) : null, String(rowHlc))) return 'skipped'
 
-        // Check existence for insert/update discrimination
-        const existing = await exec(
-          dbConn,
-          sql`SELECT ${ident(hlcField)} FROM ${ident(table)} WHERE ${ident(pkName)} = ${id}`,
-        )
+        // Existence check
+        const existing = await conn.select({ h: hlcCol(model) }).from(tbl(model)).where(eq(pkCol(model), id)).limit(1)
         const wasExisting = existing.length > 0
 
-        // Conditional upsert
-        const cols = [...new Set([...fields(model), hlcField])]
-        const colList = sql.join(cols.map(c => ident(c)), sql`, `)
-        const valList = sql.join(cols.map(c => sql`${row[c] ?? null}`), sql`, `)
-        const updateSet = sql.join(
-          cols.filter(c => c !== pkName).map(c => sql`${ident(c)} = EXCLUDED.${ident(c)}`),
-          sql`, `,
-        )
+        // Build insert values (map JS keys → SQL columns)
+        const sqlCols: string[] = []
+        const sqlVals: unknown[] = []
+        for (const [jsKey, col] of colEntries) {
+          const cn = colName(col)
+          sqlCols.push(`"${cn}"`)
+          // Try JS key first, then SQL column name
+          sqlVals.push(row[jsKey] ?? row[cn] ?? null)
+        }
+        const placeholders = sqlVals.map((_, i) => `$${i + 1}`)
+        const updateSet = colEntries
+          .filter(([, col]) => !(col as { primary?: boolean }).primary)
+          .map(([, col]) => `"${colName(col)}" = EXCLUDED."${colName(col)}"`)
+          .join(', ')
 
-        const upsertRows = await exec(
-          dbConn,
-          sql`INSERT INTO ${ident(table)} (${colList}) VALUES (${valList})
-              ON CONFLICT (${ident(pkName)}) DO UPDATE SET ${updateSet}
-              WHERE ${ident(table)}.${ident(hlcField)} < EXCLUDED.${ident(hlcField)}
-              RETURNING ${ident(pkName)}`,
-        )
-
-        if (upsertRows.length === 0) return 'skipped'
+        const upsertResult = await conn.execute(paramSql(
+          `INSERT INTO "${tn}" (${sqlCols.join(', ')}) VALUES (${placeholders.join(', ')})
+           ON CONFLICT ("${pk}") DO UPDATE SET ${updateSet}
+           WHERE "${tn}"."${hlc}" < EXCLUDED."${hlc}"
+           RETURNING "${pk}"`,
+          sqlVals,
+        ))
+        if ((upsertResult.rows ?? []).length === 0) return 'skipped'
         return wasExisting ? 'updated' : 'inserted'
       },
 
       async findTombstonesSince({ sinceHlc, limit: lim, scope }) {
-        let q: SQL
-        if (scope && Object.keys(scope).length > 0) {
-          q = sql`SELECT * FROM ${ident(TOMBSTONE_TABLE)}
-                  WHERE hlc > ${sinceHlc}
-                  AND scope @> ${JSON.stringify(scope)}::jsonb
-                  ORDER BY hlc ASC, id ASC LIMIT ${lim}`
-        } else {
-          q = sql`SELECT * FROM ${ident(TOMBSTONE_TABLE)}
-                  WHERE hlc > ${sinceHlc}
-                  ORDER BY hlc ASC, id ASC LIMIT ${lim}`
-        }
-        const rows = await exec(dbConn, q)
-        return rows.map(toTombstone)
+        const q = scope && Object.keys(scope).length > 0
+          ? sql`SELECT * FROM ${sql.identifier(tombTbl)} WHERE hlc > ${sinceHlc} AND scope @> ${JSON.stringify(scope)}::jsonb ORDER BY hlc ASC, id ASC LIMIT ${lim}`
+          : sql`SELECT * FROM ${sql.identifier(tombTbl)} WHERE hlc > ${sinceHlc} ORDER BY hlc ASC, id ASC LIMIT ${lim}`
+        const result = await conn.execute(q)
+        return ((result.rows ?? []) as Row[]).map(toTombstone)
       },
 
       async upsertTombstoneIfNewer(t) {
-        const existing = await exec(
-          dbConn,
-          sql`SELECT hlc FROM ${ident(TOMBSTONE_TABLE)} WHERE model = ${t.model} AND id = ${t.id}`,
+        const existing = await conn.execute(
+          sql`SELECT hlc FROM ${sql.identifier(tombTbl)} WHERE model = ${t.model} AND id = ${t.id}`,
         )
-        const existingHlc = existing.length > 0 ? String(existing[0]!.hlc) : null
-        if (!shouldApplyTombstone(existingHlc, t.hlc)) return false
+        const existingHlc = ((existing.rows ?? []) as Row[])[0]?.hlc
+        if (!shouldApplyTombstone(existingHlc ? String(existingHlc) : null, t.hlc)) return false
 
-        await exec(
-          dbConn,
-          sql`INSERT INTO ${ident(TOMBSTONE_TABLE)} (model, id, hlc, scope)
+        await conn.execute(
+          sql`INSERT INTO ${sql.identifier(tombTbl)} (model, id, hlc, scope)
               VALUES (${t.model}, ${t.id}, ${t.hlc}, ${JSON.stringify(t.scope)}::jsonb)
               ON CONFLICT (model, id) DO UPDATE SET hlc = EXCLUDED.hlc, scope = EXCLUDED.scope
-              WHERE ${ident(TOMBSTONE_TABLE)}.hlc < EXCLUDED.hlc`,
+              WHERE ${sql.identifier(tombTbl)}.hlc < EXCLUDED.hlc`,
         )
-
-        // Remove data row
-        const table = tbl(t.model)
-        const pkName = pk(t.model)
-        await exec(dbConn, sql`DELETE FROM ${ident(table)} WHERE ${ident(pkName)} = ${t.id}`)
+        await conn.delete(tbl(t.model)).where(eq(pkCol(t.model), t.id))
         return true
       },
 
       async gcTombstones({ olderThanHlc }) {
-        const rows = await exec(
-          dbConn,
-          sql`WITH deleted AS (
-            DELETE FROM ${ident(TOMBSTONE_TABLE)} WHERE hlc < ${olderThanHlc} RETURNING 1
-          ) SELECT COUNT(*)::int AS count FROM deleted`,
+        const result = await conn.execute(
+          sql`WITH deleted AS (DELETE FROM ${sql.identifier(tombTbl)} WHERE hlc < ${olderThanHlc} RETURNING 1) SELECT COUNT(*)::int AS count FROM deleted`,
         )
-        return ((rows[0] as { count: number })?.count) ?? 0
+        return ((result.rows ?? []) as Array<{ count: number }>)[0]?.count ?? 0
       },
 
       async transaction(fn) {
-        return dbConn.transaction(async (tx) => {
+        return conn.transaction(async (tx) => {
           const txAdapter = makeAdapter(tx as unknown as DbLike)
-          // Share schema without re-running DDL
-          const origEnsure = txAdapter.ensureSyncTables
-          txAdapter.ensureSyncTables = async () => { /* no-op in tx */ }
-          try {
-            return await fn(txAdapter)
-          } finally {
-            txAdapter.ensureSyncTables = origEnsure
-          }
+          txAdapter.ensureSyncTables = async () => {}
+          try { return await fn(txAdapter) }
+          finally { txAdapter.ensureSyncTables = makeAdapter(conn).ensureSyncTables }
         })
       },
     }
-
     return adapter
   }
 
   return makeAdapter(db)
 }
 
-// Helpers
-
-function sqlType(type: string | readonly string[]): string {
-  if (Array.isArray(type)) return 'TEXT'
-  switch (type) {
-    case 'string': return 'TEXT'
-    case 'number': return 'NUMERIC'
-    case 'boolean': return 'BOOLEAN'
-    case 'date': return 'TEXT'
-    case 'json': return 'JSONB'
-    default: return 'TEXT'
-  }
-}
+// ─── Helpers ────────────────────────────────────────────────────────
 
 function toTombstone(row: Row): Tombstone {
   return {
@@ -359,4 +336,29 @@ function toTombstone(row: Row): Tombstone {
     hlc: String(row.hlc),
     scope: typeof row.scope === 'string' ? JSON.parse(row.scope) : (row.scope as Scope) ?? {},
   }
+}
+
+function paramSql(query: string, params: unknown[]): SQL {
+  const parts = query.split(/\$\d+/)
+  const chunks: SQL[] = []
+  for (let i = 0; i < parts.length; i++) {
+    chunks.push(sql.raw(parts[i]!))
+    if (i < params.length) chunks.push(sql`${params[i]}`)
+  }
+  return sql.join(chunks, sql.raw(''))
+}
+
+/** Map DB column names back to JS field names from a raw SQL result */
+function mapColumnsToFields(row: Row, columns: Record<string, unknown>): Row {
+  const result: Row = {}
+  const colToField = new Map<string, string>()
+  for (const [jsKey, col] of Object.entries(columns)) {
+    const cn = (col as { name: string }).name
+    colToField.set(cn, jsKey)
+  }
+  for (const [key, value] of Object.entries(row)) {
+    const jsKey = colToField.get(key) ?? key
+    result[jsKey] = value
+  }
+  return result
 }
