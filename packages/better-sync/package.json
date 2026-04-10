@@ -1,0 +1,111 @@
+{
+  "name": "better-sync",
+  "version": "0.0.1",
+  "description": "Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-first. Drop-in to your existing Next.js + Drizzle/Prisma stack.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs",
+      "default": "./dist/client.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "require": "./dist/server.cjs",
+      "default": "./dist/server.js"
+    },
+    "./adapters/drizzle": {
+      "types": "./dist/adapters/drizzle.d.ts",
+      "import": "./dist/adapters/drizzle.js",
+      "require": "./dist/adapters/drizzle.cjs",
+      "default": "./dist/adapters/drizzle.js"
+    },
+    "./adapters/memory": {
+      "types": "./dist/adapters/memory.d.ts",
+      "import": "./dist/adapters/memory.js",
+      "require": "./dist/adapters/memory.cjs",
+      "default": "./dist/adapters/memory.js"
+    },
+    "./test": {
+      "types": "./dist/test.d.ts",
+      "import": "./dist/test.js",
+      "require": "./dist/test.cjs",
+      "default": "./dist/test.js"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@better-sync/core": "workspace:*",
+    "@better-sync/server": "workspace:*",
+    "@better-sync/client": "workspace:*",
+    "@better-sync/drizzle-adapter": "workspace:*",
+    "@better-sync/memory-adapter": "workspace:*",
+    "@better-sync/test-utils": "workspace:*"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.30.0",
+    "pg": ">=8.0.0",
+    "@electric-sql/pglite": ">=0.2.0",
+    "better-sqlite3": ">=11.0.0",
+    "next": ">=14.0.0",
+    "hono": ">=4.0.0",
+    "express": ">=4.0.0",
+    "react": ">=18.0.0",
+    "ink": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": { "optional": true },
+    "pg": { "optional": true },
+    "@electric-sql/pglite": { "optional": true },
+    "better-sqlite3": { "optional": true },
+    "next": { "optional": true },
+    "hono": { "optional": true },
+    "express": { "optional": true },
+    "react": { "optional": true },
+    "ink": { "optional": true }
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "sync",
+    "local-first",
+    "offline-first",
+    "bidirectional",
+    "hlc",
+    "hybrid-logical-clock",
+    "postgres",
+    "pglite",
+    "drizzle",
+    "nextjs",
+    "typescript"
+  ]
+}

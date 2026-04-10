@@ -89,8 +89,8 @@ export interface ModelDef<Ctx = any> {
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
 export type SyncSchema<Ctx = any> = Record<string, ModelDef<Ctx>>
 
-/** Field names that are reserved by the sync engine. */
-export const RESERVED_FIELDS = new Set(['changed', '__sync_meta'])
+/** Field names that are reserved by the sync engine for internal use. */
+export const RESERVED_FIELDS = new Set(['__sync_meta'])
 
 /**
  * Define a sync schema. Validates the schema and returns it.
