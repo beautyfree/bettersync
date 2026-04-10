@@ -46,6 +46,19 @@ describe('better-sync subpath exports', () => {
     expect(typeof mod.hlcAt).toBe('function')
     expect(typeof mod.getConformanceTestsByTag).toBe('function')
   })
+
+  it('better-sync/next-js exports toNextJsHandler', async () => {
+    const mod = await import('../src/next-js')
+    expect(typeof mod.toNextJsHandler).toBe('function')
+  })
+
+  it('better-sync/react exports SyncProvider, useSync, useSyncQuery, SyncDevtools', async () => {
+    const mod = await import('../src/react')
+    expect(typeof mod.SyncProvider).toBe('function')
+    expect(typeof mod.useSync).toBe('function')
+    expect(typeof mod.useSyncQuery).toBe('function')
+    expect(typeof mod.SyncDevtools).toBe('function')
+  })
 })
 
 describe('full E2E via better-sync root import', () => {

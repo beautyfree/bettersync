@@ -35,6 +35,18 @@
       "require": "./dist/adapters/memory.cjs",
       "default": "./dist/adapters/memory.js"
     },
+    "./next-js": {
+      "types": "./dist/next-js.d.ts",
+      "import": "./dist/next-js.js",
+      "require": "./dist/next-js.cjs",
+      "default": "./dist/next-js.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs",
+      "default": "./dist/react.js"
+    },
     "./test": {
       "types": "./dist/test.d.ts",
       "import": "./dist/test.js",
@@ -58,36 +70,55 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/core": "workspace:*",
-    "@better-sync/server": "workspace:*",
     "@better-sync/client": "workspace:*",
+    "@better-sync/core": "workspace:*",
     "@better-sync/drizzle-adapter": "workspace:*",
     "@better-sync/memory-adapter": "workspace:*",
+    "@better-sync/server": "workspace:*",
     "@better-sync/test-utils": "workspace:*"
   },
   "peerDependencies": {
-    "drizzle-orm": ">=0.30.0",
-    "pg": ">=8.0.0",
     "@electric-sql/pglite": ">=0.2.0",
     "better-sqlite3": ">=11.0.0",
-    "next": ">=14.0.0",
-    "hono": ">=4.0.0",
+    "drizzle-orm": ">=0.30.0",
     "express": ">=4.0.0",
-    "react": ">=18.0.0",
-    "ink": ">=5.0.0"
+    "hono": ">=4.0.0",
+    "ink": ">=5.0.0",
+    "next": ">=14.0.0",
+    "pg": ">=8.0.0",
+    "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
-    "drizzle-orm": { "optional": true },
-    "pg": { "optional": true },
-    "@electric-sql/pglite": { "optional": true },
-    "better-sqlite3": { "optional": true },
-    "next": { "optional": true },
-    "hono": { "optional": true },
-    "express": { "optional": true },
-    "react": { "optional": true },
-    "ink": { "optional": true }
+    "drizzle-orm": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "ink": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@types/react": "^19.2.14",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
