@@ -1,0 +1,11 @@
+// @ts-nocheck -- skip type checking
+import * as docs_6 from "../content/docs/react.mdx?collection=docs&hash=1775827219631"
+import * as docs_5 from "../content/docs/integrations.mdx?collection=docs&hash=1775827219631"
+import * as docs_4 from "../content/docs/index.mdx?collection=docs&hash=1775827219631"
+import * as docs_3 from "../content/docs/getting-started.mdx?collection=docs&hash=1775827219631"
+import * as docs_2 from "../content/docs/concepts.mdx?collection=docs&hash=1775827219631"
+import * as docs_1 from "../content/docs/cli.mdx?collection=docs&hash=1775827219631"
+import * as docs_0 from "../content/docs/adapters.mdx?collection=docs&hash=1775827219631"
+import { _runtime } from "fumadocs-mdx"
+import * as _source from "../source.config"
+export const docs = _runtime.docs<typeof _source.docs>([{ info: {"path":"adapters.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/adapters.mdx"}, data: docs_0 }, { info: {"path":"cli.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/cli.mdx"}, data: docs_1 }, { info: {"path":"concepts.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/concepts.mdx"}, data: docs_2 }, { info: {"path":"getting-started.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/getting-started.mdx"}, data: docs_3 }, { info: {"path":"index.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/index.mdx"}, data: docs_4 }, { info: {"path":"integrations.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/integrations.mdx"}, data: docs_5 }, { info: {"path":"react.mdx","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/react.mdx"}, data: docs_6 }], [{"info":{"path":"meta.json","absolutePath":"/Users/devall/Projects/orgs/agent-cv/data-sync/apps/docs/content/docs/meta.json"},"data":{"title":"Documentation","pages":["index","getting-started","concepts","adapters","integrations","react","cli"]}}])
