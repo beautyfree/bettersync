@@ -56,45 +56,17 @@ export default function HomePage() {
       <section className="space-y-6">
         <h2 className="text-center text-2xl font-semibold md:text-3xl">3 files. That&apos;s it.</h2>
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
-            <p className="mb-2 text-xs font-medium text-fd-muted-foreground">lib/sync.ts</p>
-            <CodeBlock lang="ts" code={`import { betterSync } from 'bettersync'
-import { drizzleAdapter }
-  from 'bettersync/adapters/drizzle'
-
-export const sync = betterSync({
-  database: drizzleAdapter(db, {
-    schema: { project: projects }
-  }),
-  models: { project: { ... } },
-  auth: async (req) => ({
-    userId: getUser(req).id
-  }),
-})`} />
+          <div className="overflow-hidden rounded-xl border">
+            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">lib/sync.ts</p>
+            <CodeBlock lang="ts" code={codeSync} />
           </div>
-          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
-            <p className="mb-2 text-xs font-medium text-fd-muted-foreground">app/api/sync/route.ts</p>
-            <CodeBlock lang="ts" code={`import { sync } from '@/lib/sync'
-
-export const POST = sync.handler`} />
+          <div className="overflow-hidden rounded-xl border">
+            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">app/api/sync/route.ts</p>
+            <CodeBlock lang="ts" code={codeRoute} />
           </div>
-          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
-            <p className="mb-2 text-xs font-medium text-fd-muted-foreground">lib/sync-client.ts</p>
-            <CodeBlock lang="ts" code={`import { createSyncClient }
-  from 'bettersync/client'
-import { pgliteAdapter }
-  from 'bettersync/adapters/pglite'
-import { PGlite }
-  from '@electric-sql/pglite'
-
-export const syncClient =
-  createSyncClient({
-    database: pgliteAdapter(
-      new PGlite('idb://app')
-    ),
-    schema: syncSchema,
-    syncUrl: '/api/sync',
-  })`} />
+          <div className="overflow-hidden rounded-xl border">
+            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">lib/sync-client.ts</p>
+            <CodeBlock lang="ts" code={codeClient} />
           </div>
         </div>
       </section>
@@ -205,6 +177,39 @@ const comparisons = [
 const frameworks = [
   'Next.js', 'Hono', 'Elysia', 'Express', 'Fastify', 'NestJS', 'Bun', 'Node.js',
 ];
+
+const codeSync = `import { betterSync } from 'bettersync'
+import { drizzleAdapter }
+  from 'bettersync/adapters/drizzle'
+
+export const sync = betterSync({
+  database: drizzleAdapter(db, {
+    schema: { project: projects },
+  }),
+  models: {
+    project: {
+      fields: { id, userId, title, changed },
+      scope: ctx => ({ userId: ctx.userId }),
+    },
+  },
+})`;
+
+const codeRoute = `import { sync } from '@/lib/sync'
+
+export const POST = sync.handler`;
+
+const codeClient = `import { createSyncClient }
+  from 'bettersync/client'
+import { pgliteAdapter }
+  from 'bettersync/adapters/pglite'
+
+export const syncClient = createSyncClient({
+  database: pgliteAdapter(
+    new PGlite('idb://app'),
+  ),
+  schema: syncSchema,
+  syncUrl: '/api/sync',
+})`;
 
 const subpaths = [
   { path: 'bettersync', desc: 'Core + betterSync() + server + client' },
