@@ -12,6 +12,7 @@
 export { createSyncClient } from './client'
 export type {
   CreateSyncClientOptions,
+  ModelAccessor,
   SyncClient,
   SyncResult,
   PendingOp,
