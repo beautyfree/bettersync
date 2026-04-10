@@ -6,6 +6,7 @@ export default defineConfig({
     client: 'src/client.ts',
     server: 'src/server.ts',
     'next-js': 'src/next-js.ts',
+    node: 'src/node.ts',
     react: 'src/react.tsx',
     'adapters/drizzle': 'src/adapters/drizzle.ts',
     'adapters/memory': 'src/adapters/memory.ts',

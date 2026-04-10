@@ -10,6 +10,7 @@
 
 export { createSyncServer } from './server'
 export type {
+  AuthResolver,
   CreateSyncServerOptions,
   SyncServer,
   SyncServerHooks,

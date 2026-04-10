@@ -26,6 +26,8 @@ import {
   type SyncSchema,
   type Tombstone,
   emptySyncResponse,
+  isSyncError,
+  parseSyncRequest,
 } from '@bettersync/core'
 import { DEFAULT_HOOK_BUDGET_MS, runHookWithTimeout } from './hooks'
 
@@ -85,7 +87,15 @@ export interface CreateSyncServerOptions<Ctx = any> {
    * Default: 30 days. Set to 0 to disable stale detection.
    */
   tombstoneRetentionMs?: number
+  /**
+   * Auth resolver for the built-in `sync.handler` Web API handler.
+   * Extracts context (e.g. userId) from the incoming Request.
+   * Can also be set later via `sync.setAuth(fn)`.
+   */
+  auth?: AuthResolver<Ctx>
 }
+
+export type AuthResolver<Ctx> = (req: Request) => Promise<Ctx> | Ctx
 
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
 export interface SyncServer<Ctx = any> {
@@ -93,6 +103,18 @@ export interface SyncServer<Ctx = any> {
   readonly schema: SyncSchema<Ctx>
   readonly options: CreateSyncServerOptions<Ctx>
   handleSync(request: SyncRequest, ctx: Ctx): Promise<SyncResponse>
+  /**
+   * Standard Web API handler. Pass an auth resolver to extract context.
+   *
+   * Usage with any framework that supports Web API Request/Response:
+   *   // Hono: app.post('/sync', (c) => sync.handler(c.req.raw))
+   *   // Elysia: app.mount(sync.handler)
+   *   // Next.js: export const POST = (req) => sync.handler(req)
+   *   // Bun: Bun.serve({ fetch: sync.handler })
+   */
+  handler: (req: Request) => Promise<Response>
+  /** Set the auth resolver used by handler(). */
+  setAuth(auth: AuthResolver<Ctx>): void
 }
 
 /**
@@ -106,6 +128,7 @@ export function createSyncServer<Ctx>(
   const hlcField = options.hlcField ?? 'changed'
   const budget = options.afterWriteInTransactionBudgetMs ?? DEFAULT_HOOK_BUDGET_MS
   const retentionMs = options.tombstoneRetentionMs ?? 30 * 24 * 60 * 60 * 1000 // 30 days
+  let authResolver: AuthResolver<Ctx> | null = (options as { auth?: AuthResolver<Ctx> }).auth ?? null
 
   const server: SyncServer<Ctx> = {
     hlc,
@@ -181,9 +204,47 @@ export function createSyncServer<Ctx>(
 
       return response
     },
+
+    // ─── Web API handler ──────────────────────────────────────
+    handler: async (req: Request): Promise<Response> => {
+      if (!authResolver) {
+        return Response.json({ error: { message: 'Auth not configured. Call sync.setAuth() or pass auth to betterSync().' } }, { status: 500 })
+      }
+      try {
+        const body = await req.json()
+        const syncReq = parseSyncRequest(body)
+        const ctx = await authResolver(req)
+        const syncRes = await server.handleSync(syncReq, ctx)
+        return Response.json(syncRes)
+      } catch (err: unknown) {
+        if (isSyncError(err)) {
+          const s = err as { code: string; toJSON(): unknown }
+          return Response.json(s.toJSON(), { status: errorCodeToHttpStatus(s.code) })
+        }
+        const message = err instanceof Error ? err.message : 'Internal server error'
+        const status = message.toLowerCase().includes('unauthorized') ? 401 : 500
+        return Response.json({ error: { message } }, { status })
+      }
+    },
+
+    setAuth(auth: AuthResolver<Ctx>) {
+      authResolver = auth
+    },
   }
 
   return server
+}
+
+function errorCodeToHttpStatus(code: string): number {
+  switch (code) {
+    case 'SCHEMA_VIOLATION': return 400
+    case 'UNAUTHORIZED': return 401
+    case 'SCOPE_VIOLATION': return 403
+    case 'PROTOCOL_VERSION_MISMATCH': return 409
+    case 'BATCH_TOO_LARGE': return 413
+    case 'STALE_CLIENT': return 410
+    default: return 500
+  }
 }
 
 function isProtocolCompatible(clientVersion: string): boolean {

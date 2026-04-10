@@ -34,6 +34,7 @@ import {
 } from '@bettersync/core'
 import {
   createSyncServer,
+  type AuthResolver,
   type SyncServer,
   type SyncServerHooks,
 } from '@bettersync/server'
@@ -46,6 +47,19 @@ export interface BetterSyncOptions<Ctx = any> {
   models: Record<string, ModelDef<Ctx>>
   /** Server-side hooks (afterWriteInTransaction, afterCommit, beforeRead). */
   hooks?: SyncServerHooks<Ctx>
+  /**
+   * Auth resolver for the built-in `sync.handler`.
+   * Extracts context from incoming Web API Request.
+   *
+   * ```ts
+   * auth: async (req) => {
+   *   const session = await getSession(req.headers)
+   *   if (!session) throw new Error('Unauthorized')
+   *   return { userId: session.user.id }
+   * }
+   * ```
+   */
+  auth?: AuthResolver<Ctx>
   /** HLC field name on rows. Default: 'changed'. */
   hlcField?: string
   /** Time budget for afterWriteInTransaction hooks (ms). Default: 100. */
@@ -69,5 +83,6 @@ export function betterSync<Ctx = any>(options: BetterSyncOptions<Ctx>): SyncServ
     hlcField: options.hlcField,
     afterWriteInTransactionBudgetMs: options.afterWriteInTransactionBudgetMs,
     clock: options.clock,
+    auth: options.auth,
   })
 }
