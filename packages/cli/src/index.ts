@@ -9,12 +9,14 @@
 
 import { Command } from 'commander'
 import { generate } from './commands/generate'
+import { init } from './commands/init'
 
 const program = new Command()
   .name('better-sync')
   .description('CLI tools for better-sync')
   .version('0.0.1')
 
+program.addCommand(init)
 program.addCommand(generate)
 
 program.parse()
