@@ -3,6 +3,18 @@ title: Getting Started
 description: From zero to working sync in 6 steps
 ---
 
+import { CopyPromptButton } from '@/components/copy-prompt'
+
+<div className="mb-8 rounded-xl border bg-fd-card p-5">
+  <div className="flex items-center justify-between gap-4">
+    <div>
+      <p className="font-semibold">Prefer AI setup?</p>
+      <p className="text-sm text-fd-muted-foreground">Copy a prompt for Claude/Cursor that analyzes your project and generates everything.</p>
+    </div>
+    <CopyPromptButton variant="compact" />
+  </div>
+</div>
+
 ## 1. Install
 
 ```bash

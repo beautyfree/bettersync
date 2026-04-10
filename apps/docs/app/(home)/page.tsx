@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CodeBlock } from '@/components/code-block';
+import { CopyPromptButton } from '@/components/copy-prompt';
 
 export default function HomePage() {
   return (
@@ -32,6 +33,7 @@ export default function HomePage() {
           >
             GitHub
           </Link>
+          <CopyPromptButton variant="compact" />
         </div>
         <div className="mx-auto max-w-md">
           <CodeBlock lang="bash" code="pnpm add bettersync" />
@@ -126,6 +128,11 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ─── AI Setup ─────────────────────────────────────────── */}
+      <section>
+        <CopyPromptButton />
       </section>
 
       {/* ─── CTA ─────────────────────────────────────────────── */}
