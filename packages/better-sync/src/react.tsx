@@ -64,6 +64,14 @@ export function useSync(): SyncClient {
 
 // ─── useSyncQuery ───────────────────────────────────────────────────
 
+export interface UseSyncQueryOptions {
+  /**
+   * When true, the query auto-refetches on every change event.
+   * No manual `refetch()` needed — data updates live.
+   */
+  live?: boolean
+}
+
 export interface UseSyncQueryResult<T> {
   data: T | undefined
   loading: boolean
@@ -76,18 +84,25 @@ export interface UseSyncQueryResult<T> {
  * Execute a local-first query against the sync client's local store.
  * Re-runs when `deps` change or when `refetch()` is called.
  *
- * @param queryFn - async function that reads from the local store via the client.
- * @param deps - dependency array (like useEffect deps). Pass [] for run-once.
+ * With `{ live: true }`, auto-refetches on every local write and
+ * every sync — no manual refetch needed.
  *
  * @example
+ * // Manual refetch:
+ * const { data, refetch } = useSyncQuery(
+ *   (sync) => sync.model('project').findMany(), [],
+ * )
+ *
+ * // Live (auto-updates):
  * const { data } = useSyncQuery(
- *   (sync) => sync.model('project').findMany(),
- *   [],
+ *   (sync) => sync.model('project').findMany(), [],
+ *   { live: true },
  * )
  */
 export function useSyncQuery<T>(
   queryFn: (client: SyncClient) => Promise<T>,
   deps: unknown[] = [],
+  options?: UseSyncQueryOptions,
 ): UseSyncQueryResult<T> {
   const client = useSync()
   const [data, setData] = useState<T | undefined>(undefined)
@@ -96,6 +111,13 @@ export function useSyncQuery<T>(
   const [tick, bump] = useReducer((n: number) => n + 1, 0)
 
   const refetch = useCallback(() => bump(), [])
+
+  // Live mode: subscribe to change events
+  useEffect(() => {
+    if (!options?.live) return
+    const unsub = client.on('change', () => bump())
+    return unsub
+  }, [client, options?.live])
 
   useEffect(() => {
     let cancelled = false

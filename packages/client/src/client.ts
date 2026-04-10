@@ -69,6 +69,8 @@ export interface SyncResult {
   pulled: number
   tombstonesApplied: number
   hasMore: boolean
+  /** True if server flagged this client as stale. Call recover(). */
+  staleClient: boolean
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
@@ -91,7 +93,17 @@ export interface SyncClient<Ctx = any> {
   recover(): Promise<SyncResult>
   /** Access a model's local-first CRUD API. */
   model<M extends string>(model: M): ModelAccessor
+  /** Subscribe to change events. Returns unsubscribe function. */
+  on(event: 'change', listener: ChangeListener): () => void
+  on(event: 'sync', listener: SyncListener): () => void
+  on(event: 'error', listener: ErrorListener): () => void
 }
+
+export type ChangeEvent = { model: string; ids: string[] }
+export type SyncEvent = { pushed: number; pulled: number }
+export type ChangeListener = (event: ChangeEvent) => void
+export type SyncListener = (event: SyncEvent) => void
+export type ErrorListener = (error: Error) => void
 
 export interface ModelAccessor {
   insert(data: Row): Promise<Row>
@@ -143,6 +155,31 @@ export function createSyncClient<Ctx>(
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let currentPollInterval = pollInterval
   let syncing = false
+
+  // ─── Event emitter ──────────────────────────────────────────────
+  const listeners = {
+    change: new Set<ChangeListener>(),
+    sync: new Set<SyncListener>(),
+    error: new Set<ErrorListener>(),
+  }
+
+  function emitChange(model: string, ids: string[]): void {
+    for (const fn of listeners.change) {
+      try { fn({ model, ids }) } catch { /* listener errors don't propagate */ }
+    }
+  }
+
+  function emitSync(pushed: number, pulled: number): void {
+    for (const fn of listeners.sync) {
+      try { fn({ pushed, pulled }) } catch { /* */ }
+    }
+  }
+
+  function emitError(error: Error): void {
+    for (const fn of listeners.error) {
+      try { fn(error) } catch { /* */ }
+    }
+  }
 
   // Build extended schema with internal tables (avoids modifying user schema)
   const extendedSchema: SyncSchema = {
@@ -253,8 +290,9 @@ export function createSyncClient<Ctx>(
           maxPollInterval,
         )
       }
-    } catch {
+    } catch (err) {
       currentPollInterval = pollInterval
+      emitError(err instanceof Error ? err : new Error(String(err)))
     }
     scheduleNextPoll()
   }
@@ -329,7 +367,7 @@ export function createSyncClient<Ctx>(
     async syncNow() {
       ensureStarted()
       if (syncing) {
-        return { pushed: 0, pulled: 0, tombstonesApplied: 0, hasMore: false }
+        return { pushed: 0, pulled: 0, tombstonesApplied: 0, hasMore: false, staleClient: false }
       }
       syncing = true
       try {
@@ -366,6 +404,12 @@ export function createSyncClient<Ctx>(
       }
     },
 
+    on(event: 'change' | 'sync' | 'error', listener: ChangeListener | SyncListener | ErrorListener) {
+      const set = listeners[event] as Set<typeof listener>
+      set.add(listener)
+      return () => { set.delete(listener) }
+    },
+
     model(modelKey) {
       ensureStarted()
       const modelDef = getModelDef(modelKey)
@@ -387,6 +431,7 @@ export function createSyncClient<Ctx>(
           }
           await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
           await setMeta('hlc_state', clock.current())
+          emitChange(modelKey, [String(row[pkField])])
           return { ...row }
         },
 
@@ -404,6 +449,7 @@ export function createSyncClient<Ctx>(
           await options.database.upsertIfNewer({ model: modelKey, row })
           await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
           await setMeta('hlc_state', clock.current())
+          emitChange(modelKey, [id])
           return { ...row }
         },
 
@@ -423,6 +469,7 @@ export function createSyncClient<Ctx>(
           await options.database.upsertTombstoneIfNewer(tombstone)
           await enqueuePending({ type: 'delete', model: modelKey, tombstone })
           await setMeta('hlc_state', clock.current())
+          emitChange(modelKey, [id])
         },
 
         findOne(where) {
@@ -478,16 +525,28 @@ export function createSyncClient<Ctx>(
 
     let pulled = 0
     let tombstonesApplied = 0
+    const changedModels = new Map<string, string[]>() // model → ids
+
     await options.database.transaction(async (tx) => {
       for (const [modelKey, rows] of Object.entries(response.changes)) {
         for (const row of rows) {
           const outcome = await tx.upsertIfNewer({ model: modelKey, row })
-          if (outcome !== 'skipped') pulled += 1
+          if (outcome !== 'skipped') {
+            pulled += 1
+            const ids = changedModels.get(modelKey) ?? []
+            ids.push(String(row.id ?? ''))
+            changedModels.set(modelKey, ids)
+          }
         }
       }
       for (const tombstone of response.tombstones) {
         const applied = await tx.upsertTombstoneIfNewer(tombstone)
-        if (applied) tombstonesApplied += 1
+        if (applied) {
+          tombstonesApplied += 1
+          const ids = changedModels.get(tombstone.model) ?? []
+          ids.push(tombstone.id)
+          changedModels.set(tombstone.model, ids)
+        }
       }
     })
 
@@ -498,11 +557,18 @@ export function createSyncClient<Ctx>(
     await setMeta('last_sync_hlc', response.serverTime)
     await setMeta('hlc_state', clock.current())
 
+    // Emit events
+    for (const [model, ids] of changedModels) {
+      emitChange(model, ids)
+    }
+    emitSync(pendingRows.length, pulled)
+
     return {
       pushed: pendingRows.length,
       pulled,
       tombstonesApplied,
       hasMore: response.hasMore,
+      staleClient: response.staleClient ?? false,
     }
   }
 

@@ -11,10 +11,15 @@
 
 export { createSyncClient } from './client'
 export type {
+  ChangeEvent,
+  ChangeListener,
   CreateSyncClientOptions,
+  ErrorListener,
   ModelAccessor,
-  SyncClient,
-  SyncResult,
   PendingOp,
+  SyncClient,
+  SyncEvent,
+  SyncListener,
+  SyncResult,
   Transport,
 } from './client'
