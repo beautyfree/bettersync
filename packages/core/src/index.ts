@@ -65,19 +65,28 @@ export type {
 
 // ─── Schema ─────────────────────────────────────────────────────────
 export {
+  buildColumnMapping,
+  columnsToRow,
   defineSchema,
+  getColumnName,
   getModelTableName,
   getPrimaryKey,
   RESERVED_FIELDS,
+  rowToColumns,
   validateSchema,
 } from './schema'
 export type {
+  ColumnMapping,
   FieldDef,
   FieldReference,
   FieldType,
   ModelDef,
   SyncSchema,
 } from './schema'
+
+// ─── SQL Generator ──────────────────────────────────────────────────
+export { formatSQL, generateSQL } from './generate'
+export type { GenerateSQLOptions } from './generate'
 
 // ─── Adapter ────────────────────────────────────────────────────────
 export type {

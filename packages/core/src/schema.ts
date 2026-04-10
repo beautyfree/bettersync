@@ -56,6 +56,15 @@ export interface FieldDef {
    * Useful for client-only UI state (e.g. `isDraft`, `unreadBadge`).
    */
   sync?: boolean
+  /**
+   * Database column name. Defaults to the field key.
+   * Use for snake_case mapping: `{ userId: { type: 'string', columnName: 'user_id' } }`.
+   *
+   * Only used by server-side adapters with existing tables.
+   * Client-side adapters (PGlite, memory) use the JS field key directly.
+   * Wire protocol always uses JS field keys.
+   */
+  columnName?: string
 }
 
 /**
@@ -247,4 +256,76 @@ export function getPrimaryKey(modelKey: string, def: ModelDef): string {
     `Model "${modelKey}" has no primary key field`,
     'Add `primaryKey: true` to your id field.',
   )
+}
+
+/**
+ * Get the database column name for a field.
+ * Returns `field.columnName` if set, otherwise the field key itself.
+ */
+export function getColumnName(fieldKey: string, def: ModelDef): string {
+  const field = def.fields[fieldKey]
+  return field?.columnName ?? fieldKey
+}
+
+/**
+ * Build a bidirectional field↔column mapping for a model.
+ * Used by server-side adapters to translate between JS field names
+ * (wire protocol) and DB column names (existing tables).
+ */
+export interface ColumnMapping {
+  /** JS field key → DB column name */
+  toColumn: Record<string, string>
+  /** DB column name → JS field key */
+  toField: Record<string, string>
+  /** True if any field has a custom columnName (optimization: skip mapping if not) */
+  hasCustomMapping: boolean
+}
+
+export function buildColumnMapping(def: ModelDef, hlcField = 'changed'): ColumnMapping {
+  const toColumn: Record<string, string> = {}
+  const toField: Record<string, string> = {}
+  let hasCustomMapping = false
+
+  for (const [key, field] of Object.entries(def.fields)) {
+    const col = field.columnName ?? key
+    toColumn[key] = col
+    toField[col] = key
+    if (field.columnName && field.columnName !== key) {
+      hasCustomMapping = true
+    }
+  }
+
+  // HLC field mapping
+  if (!(hlcField in toColumn)) {
+    toColumn[hlcField] = hlcField
+    toField[hlcField] = hlcField
+  }
+
+  return { toColumn, toField, hasCustomMapping }
+}
+
+/**
+ * Translate a row from JS field names to DB column names.
+ * No-op if the model has no custom columnName mappings.
+ */
+export function rowToColumns(row: Row, mapping: ColumnMapping): Row {
+  if (!mapping.hasCustomMapping) return row
+  const result: Row = {}
+  for (const [key, value] of Object.entries(row)) {
+    result[mapping.toColumn[key] ?? key] = value
+  }
+  return result
+}
+
+/**
+ * Translate a row from DB column names to JS field names.
+ * No-op if the model has no custom columnName mappings.
+ */
+export function columnsToRow(row: Row, mapping: ColumnMapping): Row {
+  if (!mapping.hasCustomMapping) return row
+  const result: Row = {}
+  for (const [col, value] of Object.entries(row)) {
+    result[mapping.toField[col] ?? col] = value
+  }
+  return result
 }
