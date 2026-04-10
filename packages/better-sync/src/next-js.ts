@@ -22,8 +22,8 @@ import {
   isSyncError,
   parseSyncRequest,
   type SyncError,
-} from '@better-sync/core'
-import type { SyncServer } from '@better-sync/server'
+} from '@bettersync/core'
+import type { SyncServer } from '@bettersync/server'
 
 export interface NextJsHandlerOptions<Ctx> {
   /** Extract auth context from the request. Throw to reject (401). */

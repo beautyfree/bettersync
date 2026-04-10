@@ -1,5 +1,5 @@
 {
-  "name": "@better-sync/server",
+  "name": "@bettersync/server",
   "version": "0.0.1",
   "description": "Framework-agnostic sync request handler for better-sync",
   "license": "Apache-2.0",
@@ -28,10 +28,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/core": "workspace:*"
+    "@bettersync/core": "workspace:*"
   },
   "devDependencies": {
-    "@better-sync/memory-adapter": "workspace:*",
+    "@bettersync/memory-adapter": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"

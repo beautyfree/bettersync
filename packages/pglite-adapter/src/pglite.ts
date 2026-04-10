@@ -20,7 +20,7 @@ import {
   getPrimaryKey,
   shouldApplyTombstone,
   shouldDropAsResurrection,
-} from '@better-sync/core'
+} from '@bettersync/core'
 
 const CAPABILITIES: AdapterCapabilities = {
   adapterId: 'pglite',

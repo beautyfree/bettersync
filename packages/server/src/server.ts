@@ -4,7 +4,7 @@
  *
  * The server is framework-agnostic: `handleSync` takes a parsed SyncRequest
  * and an authenticated context and returns a SyncResponse. Framework bindings
- * (@better-sync/server-hono, /server-next, etc.) will call this under the hood.
+ * (@bettersync/server-hono, /server-next, etc.) will call this under the hood.
  */
 
 import {
@@ -24,7 +24,7 @@ import {
   type SyncSchema,
   type Tombstone,
   emptySyncResponse,
-} from '@better-sync/core'
+} from '@bettersync/core'
 import { DEFAULT_HOOK_BUDGET_MS, runHookWithTimeout } from './hooks'
 
 export interface BeforeReadArgs<Ctx> {

@@ -1,5 +1,5 @@
 /**
- * @better-sync/memory-adapter
+ * @bettersync/memory-adapter
  *
  * In-memory SyncAdapter for tests, local prototypes, and adapter conformance.
  * Not intended for production use — state is lost on process exit.

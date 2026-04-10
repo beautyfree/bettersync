@@ -76,13 +76,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/client": "workspace:*",
-    "@better-sync/core": "workspace:*",
-    "@better-sync/drizzle-adapter": "workspace:*",
-    "@better-sync/memory-adapter": "workspace:*",
-    "@better-sync/server": "workspace:*",
-    "@better-sync/pglite-adapter": "workspace:*",
-    "@better-sync/test-utils": "workspace:*"
+    "@bettersync/client": "workspace:*",
+    "@bettersync/core": "workspace:*",
+    "@bettersync/drizzle-adapter": "workspace:*",
+    "@bettersync/memory-adapter": "workspace:*",
+    "@bettersync/server": "workspace:*",
+    "@bettersync/pglite-adapter": "workspace:*",
+    "@bettersync/test-utils": "workspace:*"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.2.0",

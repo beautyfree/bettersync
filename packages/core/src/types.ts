@@ -1,5 +1,5 @@
 /**
- * Shared primitive types for @better-sync/core.
+ * Shared primitive types for @bettersync/core.
  *
  * No external imports — this is the bottom of the dependency graph.
  */

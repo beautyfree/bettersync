@@ -4,13 +4,13 @@
  * Requires Docker. Skip with SKIP_DOCKER=true if Docker is unavailable.
  */
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
-import { CONFORMANCE_TESTS, type ConformanceContext } from '@better-sync/test-utils'
+import { CONFORMANCE_TESTS, type ConformanceContext } from '@bettersync/test-utils'
 import { drizzleAdapter } from '../src/index'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
-import { CONFORMANCE_TEST_SCHEMA } from '@better-sync/test-utils'
+import { CONFORMANCE_TEST_SCHEMA } from '@bettersync/test-utils'
 
 const SKIP = process.env.SKIP_DOCKER === 'true'
 

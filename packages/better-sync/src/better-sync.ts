@@ -31,12 +31,12 @@ import {
   type ModelDef,
   type HLClockOptions,
   defineSchema,
-} from '@better-sync/core'
+} from '@bettersync/core'
 import {
   createSyncServer,
   type SyncServer,
   type SyncServerHooks,
-} from '@better-sync/server'
+} from '@bettersync/server'
 
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx
 export interface BetterSyncOptions<Ctx = any> {

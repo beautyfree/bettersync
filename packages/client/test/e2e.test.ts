@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { SyncRequest, SyncSchema } from '@better-sync/core'
-import { memoryAdapter } from '@better-sync/memory-adapter'
-import { createSyncServer } from '@better-sync/server'
+import type { SyncRequest, SyncSchema } from '@bettersync/core'
+import { memoryAdapter } from '@bettersync/memory-adapter'
+import { createSyncServer } from '@bettersync/server'
 import { createSyncClient, type Transport } from '../src/index'
 
 interface Ctx {

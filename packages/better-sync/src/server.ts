@@ -11,4 +11,4 @@ export {
   type HookChangeDescriptor,
   type SyncServer,
   type SyncServerHooks,
-} from '@better-sync/server'
+} from '@bettersync/server'

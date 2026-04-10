@@ -1,5 +1,5 @@
 {
-  "name": "@better-sync/core",
+  "name": "@bettersync/core",
   "version": "0.0.1",
   "description": "Core types, HLC, schema DSL, and adapter interface for better-sync",
   "license": "Apache-2.0",

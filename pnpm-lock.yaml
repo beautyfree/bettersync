@@ -51,25 +51,25 @@ importers:
 
   packages/better-sync:
     dependencies:
-      '@better-sync/client':
+      '@bettersync/client':
         specifier: workspace:*
         version: link:../client
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
-      '@better-sync/drizzle-adapter':
+      '@bettersync/drizzle-adapter':
         specifier: workspace:*
         version: link:../drizzle-adapter
-      '@better-sync/memory-adapter':
+      '@bettersync/memory-adapter':
         specifier: workspace:*
         version: link:../memory-adapter
-      '@better-sync/pglite-adapter':
+      '@bettersync/pglite-adapter':
         specifier: workspace:*
         version: link:../pglite-adapter
-      '@better-sync/server':
+      '@bettersync/server':
         specifier: workspace:*
         version: link:../server
-      '@better-sync/test-utils':
+      '@bettersync/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       '@electric-sql/pglite':
@@ -115,14 +115,14 @@ importers:
 
   packages/client:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@better-sync/memory-adapter':
+      '@bettersync/memory-adapter':
         specifier: workspace:*
         version: link:../memory-adapter
-      '@better-sync/server':
+      '@bettersync/server':
         specifier: workspace:*
         version: link:../server
       tsup:
@@ -149,11 +149,11 @@ importers:
 
   packages/drizzle-adapter:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@better-sync/test-utils':
+      '@bettersync/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       '@testcontainers/postgresql':
@@ -180,11 +180,11 @@ importers:
 
   packages/memory-adapter:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@better-sync/test-utils':
+      '@bettersync/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       tsup:
@@ -199,11 +199,11 @@ importers:
 
   packages/pglite-adapter:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@better-sync/test-utils':
+      '@bettersync/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       '@electric-sql/pglite':
@@ -221,11 +221,11 @@ importers:
 
   packages/server:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@better-sync/memory-adapter':
+      '@bettersync/memory-adapter':
         specifier: workspace:*
         version: link:../memory-adapter
       tsup:
@@ -240,7 +240,7 @@ importers:
 
   packages/test-utils:
     dependencies:
-      '@better-sync/core':
+      '@bettersync/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

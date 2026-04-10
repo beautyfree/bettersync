@@ -1,9 +1,9 @@
 /**
- * Run the shared @better-sync/test-utils conformance suite against the
+ * Run the shared @bettersync/test-utils conformance suite against the
  * in-memory adapter. Every test in CONFORMANCE_TESTS must pass.
  */
 import { describe, it } from 'vitest'
-import { CONFORMANCE_TESTS, type ConformanceContext } from '@better-sync/test-utils'
+import { CONFORMANCE_TESTS, type ConformanceContext } from '@bettersync/test-utils'
 import { memoryAdapter } from '../src/index'
 
 describe('memory-adapter conformance', () => {

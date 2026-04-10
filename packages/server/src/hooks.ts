@@ -7,7 +7,7 @@
  * typed `HookTimeoutError` that rolls back the transaction.
  */
 
-import { HookTimeoutError } from '@better-sync/core'
+import { HookTimeoutError } from '@bettersync/core'
 
 /** Default budget for `afterWriteInTransaction` hooks, in milliseconds. */
 export const DEFAULT_HOOK_BUDGET_MS = 100

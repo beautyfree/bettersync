@@ -1,5 +1,5 @@
 /**
- * @better-sync/drizzle-adapter
+ * @bettersync/drizzle-adapter
  *
  * SyncAdapter backed by Drizzle ORM + node-postgres.
  * Uses raw SQL via `db.execute(sql\`...\`)` since sync tables are dynamic

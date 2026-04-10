@@ -1,5 +1,5 @@
 {
-  "name": "@better-sync/drizzle-adapter",
+  "name": "@bettersync/drizzle-adapter",
   "version": "0.0.1",
   "description": "Drizzle ORM adapter for better-sync (Postgres-specific in v0.1)",
   "license": "Apache-2.0",
@@ -24,14 +24,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/core": "workspace:*"
+    "@bettersync/core": "workspace:*"
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.30.0",
     "pg": ">=8.0.0"
   },
   "devDependencies": {
-    "@better-sync/test-utils": "workspace:*",
+    "@bettersync/test-utils": "workspace:*",
     "@testcontainers/postgresql": "^10.13.0",
     "drizzle-orm": "^0.37.0",
     "pg": "^8.13.0",

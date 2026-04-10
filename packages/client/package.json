@@ -1,5 +1,5 @@
 {
-  "name": "@better-sync/client",
+  "name": "@bettersync/client",
   "version": "0.0.1",
   "description": "Local-first sync client for better-sync",
   "license": "Apache-2.0",
@@ -28,11 +28,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/core": "workspace:*"
+    "@bettersync/core": "workspace:*"
   },
   "devDependencies": {
-    "@better-sync/memory-adapter": "workspace:*",
-    "@better-sync/server": "workspace:*",
+    "@bettersync/memory-adapter": "workspace:*",
+    "@bettersync/server": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"

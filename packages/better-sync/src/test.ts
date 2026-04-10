@@ -9,4 +9,4 @@ export {
   type AdapterFactory,
   type ConformanceContext,
   type ConformanceTest,
-} from '@better-sync/test-utils'
+} from '@bettersync/test-utils'

@@ -1,5 +1,5 @@
 /**
- * @better-sync/client
+ * @bettersync/client
  *
  * Local-first sync client. Wraps a SyncAdapter with a HLC clock, pending
  * queue, and sync loop. Writes go to the local store first (fast, offline)

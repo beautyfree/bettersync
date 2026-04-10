@@ -1,5 +1,5 @@
 /**
- * @better-sync/server
+ * @bettersync/server
  *
  * Framework-agnostic sync request handler. Wraps a SyncAdapter with a
  * `handleSync(request, ctx)` method that implements the full sync protocol:

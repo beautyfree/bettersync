@@ -31,7 +31,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { SyncClient } from '@better-sync/client'
+import type { SyncClient } from '@bettersync/client'
 
 // ─── Context ────────────────────────────────────────────────────────
 

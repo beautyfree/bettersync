@@ -6,8 +6,8 @@ import {
   PROTOCOL_VERSION,
   type SyncRequest,
   type SyncSchema,
-} from '@better-sync/core'
-import { memoryAdapter } from '@better-sync/memory-adapter'
+} from '@bettersync/core'
+import { memoryAdapter } from '@bettersync/memory-adapter'
 import { createSyncServer } from '../src/index'
 
 interface Ctx {

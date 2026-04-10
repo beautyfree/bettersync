@@ -1,5 +1,5 @@
 /**
- * @better-sync/pglite-adapter
+ * @bettersync/pglite-adapter
  *
  * PGlite (Postgres WASM) adapter for better-sync.
  * Same Postgres SQL dialect as the server-side Drizzle adapter.

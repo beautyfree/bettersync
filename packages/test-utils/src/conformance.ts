@@ -11,7 +11,7 @@ import {
   type SyncAdapter,
   type SyncSchema,
   encodeHlc,
-} from '@better-sync/core'
+} from '@bettersync/core'
 
 /** A factory that produces a fresh adapter for each test. */
 export type AdapterFactory = () => SyncAdapter | Promise<SyncAdapter>

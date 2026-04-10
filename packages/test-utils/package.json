@@ -1,5 +1,5 @@
 {
-  "name": "@better-sync/test-utils",
+  "name": "@bettersync/test-utils",
   "version": "0.0.1",
   "description": "Adapter conformance test suite and shared testing helpers for better-sync",
   "license": "Apache-2.0",
@@ -28,7 +28,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-sync/core": "workspace:*"
+    "@bettersync/core": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

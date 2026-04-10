@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { memoryAdapter } from '../src/index'
-import { encodeHlc, type SyncSchema } from '@better-sync/core'
+import { encodeHlc, type SyncSchema } from '@bettersync/core'
 
 const schema: SyncSchema = {
   project: {

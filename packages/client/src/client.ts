@@ -26,7 +26,7 @@ import {
   type SyncSchema,
   type Tombstone,
   type Where,
-} from '@better-sync/core'
+} from '@bettersync/core'
 
 /**
  * Transport function — takes a SyncRequest, returns a SyncResponse.

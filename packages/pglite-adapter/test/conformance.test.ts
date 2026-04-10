@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
-import { CONFORMANCE_TESTS, type ConformanceContext } from '@better-sync/test-utils'
+import { CONFORMANCE_TESTS, type ConformanceContext } from '@bettersync/test-utils'
 import { pgliteAdapter } from '../src/index'
 
 describe('pglite-adapter conformance', () => {

@@ -4,8 +4,8 @@ import {
   type SyncRequest,
   type SyncResponse,
   type SyncSchema,
-} from '@better-sync/core'
-import { memoryAdapter } from '@better-sync/memory-adapter'
+} from '@bettersync/core'
+import { memoryAdapter } from '@bettersync/memory-adapter'
 import { createSyncClient, type Transport } from '../src/index'
 
 interface Ctx {

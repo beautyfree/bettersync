@@ -85,26 +85,26 @@ export {
   shouldApplyTombstone,
   shouldDropAsResurrection,
   type DecideMergeResult,
-} from '@better-sync/core'
+} from '@bettersync/core'
 
 // ─── Facade ─────────────────────────────────────────────────────────
 export { betterSync } from './better-sync'
 export type { BetterSyncOptions } from './better-sync'
 
 // ─── Server ─────────────────────────────────────────────────────────
-export { createSyncServer } from '@better-sync/server'
+export { createSyncServer } from '@bettersync/server'
 export type {
   CreateSyncServerOptions,
   SyncServer,
   SyncServerHooks,
-} from '@better-sync/server'
+} from '@bettersync/server'
 
 // ─── Client ─────────────────────────────────────────────────────────
-export { createSyncClient } from '@better-sync/client'
+export { createSyncClient } from '@bettersync/client'
 export type {
   CreateSyncClientOptions,
   ModelAccessor,
   SyncClient,
   SyncResult,
   Transport,
-} from '@better-sync/client'
+} from '@bettersync/client'

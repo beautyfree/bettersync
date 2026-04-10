@@ -1,7 +1,7 @@
 /**
- * Typed errors for @better-sync/core with structural type guards.
+ * Typed errors for @bettersync/core with structural type guards.
  *
- * Why structural and not `instanceof`: when @better-sync/core is installed
+ * Why structural and not `instanceof`: when @bettersync/core is installed
  * twice (e.g. once via `better-sync`, once via a plugin's transitive dep),
  * `instanceof` fails because the two copies have different class identities.
  * Structural guards via a brand property work across instances.
@@ -57,7 +57,7 @@ export class SyncError extends Error {
 
 /**
  * Structural type guard. Use instead of `instanceof SyncError` because
- * duplicate copies of @better-sync/core (e.g. via plugin transitive deps)
+ * duplicate copies of @bettersync/core (e.g. via plugin transitive deps)
  * break instanceof checks.
  */
 export function isSyncError(err: unknown): err is SyncError {

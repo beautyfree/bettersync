@@ -9,4 +9,4 @@ export {
   type SyncClient,
   type SyncResult,
   type Transport,
-} from '@better-sync/client'
+} from '@bettersync/client'

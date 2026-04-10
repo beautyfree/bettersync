@@ -21,7 +21,7 @@ import {
   getPrimaryKey,
   shouldApplyTombstone,
   shouldDropAsResurrection,
-} from '@better-sync/core'
+} from '@bettersync/core'
 import { sql, type SQL } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 
