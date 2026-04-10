@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CodeBlock } from '@/components/code-block';
 
 export default function HomePage() {
   return (
@@ -32,9 +33,9 @@ export default function HomePage() {
             GitHub
           </Link>
         </div>
-        <pre className="mx-auto max-w-md overflow-x-auto rounded-xl bg-fd-secondary px-6 py-3 text-left text-sm">
-          <code>pnpm add bettersync</code>
-        </pre>
+        <div className="mx-auto max-w-md">
+          <CodeBlock lang="bash" code="pnpm add bettersync" />
+        </div>
       </section>
 
       {/* ─── Features grid (9 cards) ─────────────────────────── */}
@@ -55,9 +56,9 @@ export default function HomePage() {
       <section className="space-y-6">
         <h2 className="text-center text-2xl font-semibold md:text-3xl">3 files. That&apos;s it.</h2>
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border bg-fd-card p-4">
+          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
             <p className="mb-2 text-xs font-medium text-fd-muted-foreground">lib/sync.ts</p>
-            <pre className="overflow-x-auto text-xs"><code>{`import { betterSync } from 'bettersync'
+            <CodeBlock lang="ts" code={`import { betterSync } from 'bettersync'
 import { drizzleAdapter }
   from 'bettersync/adapters/drizzle'
 
@@ -69,17 +70,17 @@ export const sync = betterSync({
   auth: async (req) => ({
     userId: getUser(req).id
   }),
-})`}</code></pre>
+})`} />
           </div>
-          <div className="rounded-xl border bg-fd-card p-4">
+          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
             <p className="mb-2 text-xs font-medium text-fd-muted-foreground">app/api/sync/route.ts</p>
-            <pre className="overflow-x-auto text-xs"><code>{`import { sync } from '@/lib/sync'
+            <CodeBlock lang="ts" code={`import { sync } from '@/lib/sync'
 
-export const POST = sync.handler`}</code></pre>
+export const POST = sync.handler`} />
           </div>
-          <div className="rounded-xl border bg-fd-card p-4">
+          <div className="rounded-xl border bg-fd-card p-4 overflow-hidden">
             <p className="mb-2 text-xs font-medium text-fd-muted-foreground">lib/sync-client.ts</p>
-            <pre className="overflow-x-auto text-xs"><code>{`import { createSyncClient }
+            <CodeBlock lang="ts" code={`import { createSyncClient }
   from 'bettersync/client'
 import { pgliteAdapter }
   from 'bettersync/adapters/pglite'
@@ -93,7 +94,7 @@ export const syncClient =
     ),
     schema: syncSchema,
     syncUrl: '/api/sync',
-  })`}</code></pre>
+  })`} />
           </div>
         </div>
       </section>
