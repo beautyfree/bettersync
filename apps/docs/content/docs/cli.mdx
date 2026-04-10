@@ -1,0 +1,25 @@
+---
+title: CLI
+description: init, generate
+---
+
+## init
+
+```bash
+npx @bettersync/cli init
+```
+
+Scaffolds sync into an existing project.
+
+## generate
+
+```bash
+# New database
+npx @bettersync/cli generate --config lib/sync.ts
+
+# Existing database
+npx @bettersync/cli generate --config lib/sync.ts --alter --backfill
+
+# Save to file
+npx @bettersync/cli generate --output migrations/sync.sql
+```

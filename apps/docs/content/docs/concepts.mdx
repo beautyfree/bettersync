@@ -1,0 +1,44 @@
+---
+title: Core Concepts
+description: HLC, schema, scope, tombstones
+---
+
+## Hybrid Logical Clock (HLC)
+
+Every write gets a deterministic timestamp: 24 hex characters encoding `(wall_ms, logical_counter, node_id)`.
+
+- Lexicographic string compare = temporal compare
+- No randomness — two clients always agree on ordering
+- Clock skew handled via `max()` merge rule
+
+## Schema
+
+Models are defined in `betterSync({ models })`:
+
+```ts
+models: {
+  project: {
+    fields: {
+      id:      { type: 'string', primaryKey: true },
+      userId:  { type: 'string' },
+      title:   { type: 'string' },
+      changed: { type: 'string' },
+    },
+    scope: (ctx) => ({ userId: ctx.userId }),
+  },
+}
+```
+
+Field types: `string`, `number`, `boolean`, `date`, `json`, `['enum', 'values']`.
+
+## Scope (Multi-tenancy)
+
+The `scope` function ensures client A only sees their own rows and cannot write to another user's rows.
+
+## Tombstones
+
+Deletes are tracked via tombstone records. GC'd after 30 days (configurable). Stale clients must call `recover()`.
+
+## Last-Write-Wins (LWW)
+
+Server re-stamps both writes with its own HLC. The later server-stamped HLC wins.

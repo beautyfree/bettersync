@@ -1,0 +1,33 @@
+---
+title: React
+description: SyncProvider, useSync, useSyncQuery, SyncDevtools
+---
+
+## Setup
+
+```tsx
+import { SyncProvider, SyncDevtools } from 'bettersync/react'
+
+<SyncProvider client={syncClient}>
+  {children}
+  <SyncDevtools />
+</SyncProvider>
+```
+
+## useSyncQuery
+
+```tsx
+// Live mode — auto-updates on writes and syncs:
+const { data } = useSyncQuery(
+  (sync) => sync.model('todo').findMany(), [],
+  { live: true },
+)
+```
+
+## Events
+
+```ts
+sync.on('change', ({ model, ids }) => console.log('changed:', model, ids))
+sync.on('sync', ({ pushed, pulled }) => console.log('synced'))
+sync.on('error', (err) => console.error(err))
+```

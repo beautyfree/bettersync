@@ -1,0 +1,37 @@
+---
+title: Integrations
+description: Next.js, NestJS, Express, Hono, Elysia, Bun
+---
+
+`sync.handler` is a standard Web API handler. Works with any framework.
+
+## Next.js
+
+```ts title="app/api/sync/route.ts"
+export const POST = sync.handler
+```
+
+## Hono
+
+```ts
+app.post('/sync', (c) => sync.handler(c.req.raw))
+```
+
+## Elysia
+
+```ts
+app.mount('/sync', sync.handler)
+```
+
+## Bun
+
+```ts
+Bun.serve({ fetch: sync.handler })
+```
+
+## Express / Fastify / NestJS
+
+```ts
+import { toNodeHandler } from 'bettersync/node'
+app.post('/api/sync', toNodeHandler(sync))
+```

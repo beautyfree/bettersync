@@ -1,0 +1,43 @@
+---
+title: Adapters
+description: Drizzle, PGlite, Memory
+---
+
+## Drizzle + Postgres
+
+```ts
+import { drizzleAdapter } from 'bettersync/adapters/drizzle'
+import { projects } from './db/schema'
+
+drizzleAdapter(db, { schema: { project: projects } })
+```
+
+Column mapping is automatic from Drizzle table definitions.
+
+## PGlite (Browser)
+
+```ts
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
+import { PGlite } from '@electric-sql/pglite'
+
+pgliteAdapter(new PGlite('idb://my-app'))
+```
+
+## Memory (Tests)
+
+```ts
+import { memoryAdapter } from 'bettersync/adapters/memory'
+memoryAdapter()
+```
+
+## Conformance Suite
+
+Every adapter passes 19 shared tests:
+
+```ts
+import { CONFORMANCE_TESTS } from 'bettersync/test'
+
+for (const test of CONFORMANCE_TESTS) {
+  it(test.name, () => test.run({ factory: () => myAdapter() }))
+}
+```

@@ -1,37 +1,30 @@
 ---
 title: Getting Started
-description: From zero to working sync in 6 steps.
+description: From zero to working sync in 6 steps
 ---
-
-# Getting Started
 
 ## 1. Install
 
 ```bash
-pnpm add bettersync
-# For browser client:
-pnpm add @electric-sql/pglite
+pnpm add bettersync @electric-sql/pglite
 ```
 
 ## 2. Create Sync Config
-
-Create `lib/sync.ts` — one file, like better-auth:
 
 ```ts title="lib/sync.ts"
 import { betterSync } from 'bettersync'
 import { drizzleAdapter } from 'bettersync/adapters/drizzle'
 import { db } from './db'
+import { projects } from './db/schema'
 
 export const sync = betterSync({
-  database: drizzleAdapter(db, {
-    schema: { project: projects, task: tasks },
-  }),
+  database: drizzleAdapter(db, { schema: { project: projects } }),
   models: {
     project: {
       fields: {
-        id:     { type: 'string', primaryKey: true },
-        userId: { type: 'string' },
-        title:  { type: 'string' },
+        id:      { type: 'string', primaryKey: true },
+        userId:  { type: 'string' },
+        title:   { type: 'string' },
         changed: { type: 'string' },
       },
       scope: (ctx) => ({ userId: ctx.userId }),
@@ -49,39 +42,22 @@ export const syncSchema = sync.schema
 
 ## 3. Mount Handler
 
-### Next.js App Router
-
 ```ts title="app/api/sync/route.ts"
 import { sync } from '@/lib/sync'
 export const POST = sync.handler
 ```
 
-### Express / NestJS
-
+Or with Express/NestJS:
 ```ts
 import { toNodeHandler } from 'bettersync/node'
 app.post('/api/sync', toNodeHandler(sync))
 ```
 
-### Hono
-
-```ts
-app.post('/sync', (c) => sync.handler(c.req.raw))
-```
-
-### Elysia
-
-```ts
-app.mount(sync.handler)
-```
-
-## 4. Create Database Tables
+## 4. Generate Tables
 
 ```bash
 npx @bettersync/cli generate --config lib/sync.ts
 ```
-
-Run the generated SQL against your database.
 
 ## 5. Create Client
 
@@ -118,13 +94,8 @@ function TodoList() {
     (s) => s.model('todo').findMany(), [],
     { live: true },
   )
-
-  return (
-    <ul>
-      {todos?.map(t => <li key={String(t.id)}>{String(t.title)}</li>)}
-    </ul>
-  )
+  return <ul>{todos?.map(t => <li key={String(t.id)}>{String(t.title)}</li>)}</ul>
 }
 ```
 
-That's it. Open two tabs. Add a todo in one. See it in the other.
+Open two tabs. Add a todo in one. See it in the other.
