@@ -1,0 +1,30 @@
+{
+  "name": "@bettersync/cli",
+  "version": "0.0.1",
+  "description": "CLI for better-sync — generate migrations, scaffold projects",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "better-sync": "./dist/index.mjs"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bettersync/core": "workspace:*",
+    "c12": "^3.0.2",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "get-tsconfig": "^4.10.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
