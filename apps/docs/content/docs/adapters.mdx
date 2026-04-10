@@ -1,6 +1,6 @@
 ---
 title: Adapters
-description: Drizzle, PGlite, Memory
+description: Drizzle, Prisma, Kysely, pg, PGlite, better-sqlite3, Memory
 ---
 
 ## Drizzle + Postgres
@@ -14,6 +14,37 @@ drizzleAdapter(db, { schema: { project: projects } })
 
 Column mapping is automatic from Drizzle table definitions.
 
+## Prisma + Postgres
+
+```ts
+import { prismaAdapter } from 'bettersync/adapters/prisma'
+
+prismaAdapter(prisma)
+```
+
+Uses `$queryRawUnsafe` under the hood. Works with any Prisma schema.
+
+## Kysely + Postgres
+
+```ts
+import { kyselyAdapter } from 'bettersync/adapters/kysely'
+
+kyselyAdapter(db)
+```
+
+Uses `CompiledQuery.raw()` for parameterized queries.
+
+## pg (node-postgres)
+
+```ts
+import { pgAdapter } from 'bettersync/adapters/pg'
+import { Pool } from 'pg'
+
+pgAdapter(new Pool({ connectionString: DATABASE_URL }))
+```
+
+Raw SQL, no ORM. Minimal dependency.
+
 ## PGlite (Browser)
 
 ```ts
@@ -22,6 +53,20 @@ import { PGlite } from '@electric-sql/pglite'
 
 pgliteAdapter(new PGlite('idb://my-app'))
 ```
+
+Postgres WASM in the browser. Same SQL dialect as server.
+
+## better-sqlite3 (Node.js / Electron)
+
+```ts
+import { betterSqlite3Adapter }
+  from 'bettersync/adapters/better-sqlite3'
+import Database from 'better-sqlite3'
+
+betterSqlite3Adapter(new Database('app.db'))
+```
+
+Synchronous SQLite. Ideal for Electron, CLI tools, or edge.
 
 ## Memory (Tests)
 
@@ -38,6 +83,7 @@ Every adapter passes 19 shared tests:
 import { CONFORMANCE_TESTS } from 'bettersync/test'
 
 for (const test of CONFORMANCE_TESTS) {
-  it(test.name, () => test.run({ factory: () => myAdapter() }))
+  it(test.name, () =>
+    test.run({ factory: () => myAdapter() }))
 }
 ```

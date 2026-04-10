@@ -1,0 +1,28 @@
+---
+title: Playground
+description: Try bettersync live — two clients syncing through a virtual server
+---
+
+import { Playground } from '@/components/playground'
+
+Try bettersync's sync protocol live in your browser. Two clients, one server, all running locally.
+
+1. **Add items** on either client
+2. Click **Sync** to push/pull changes through the server
+3. Watch **HLC timestamps** and **tombstones** in the log
+
+<Playground />
+
+## Try these scenarios
+
+### Basic sync
+Add "Buy milk" on Client A, sync A, then sync B. The item appears on both.
+
+### Conflict resolution
+Add "Draft v1" on Client A and "Draft v2" on Client B (same concept, different clients). Sync both. Last-Write-Wins — the higher HLC keeps its version.
+
+### Tombstone prevention
+Add "Temp note" on Client A, sync both. Delete it on Client A, sync A. Now sync B — the tombstone prevents the deleted item from coming back.
+
+### Offline catch-up
+Add several items on Client A without syncing. Add different items on Client B. Then sync both — all items merge correctly.

@@ -226,6 +226,10 @@ const subpaths = [
   { path: 'bettersync/node', desc: 'Express / Fastify / NestJS adapter' },
   { path: 'bettersync/react', desc: 'SyncProvider, useSync, useSyncQuery, SyncDevtools' },
   { path: 'bettersync/adapters/drizzle', desc: 'Drizzle + Postgres (better-auth style)' },
+  { path: 'bettersync/adapters/prisma', desc: 'Prisma + Postgres' },
+  { path: 'bettersync/adapters/kysely', desc: 'Kysely + Postgres' },
+  { path: 'bettersync/adapters/pg', desc: 'Raw node-postgres' },
   { path: 'bettersync/adapters/pglite', desc: 'PGlite (Postgres WASM in browser)' },
+  { path: 'bettersync/adapters/better-sqlite3', desc: 'SQLite for Node.js / Electron' },
   { path: 'bettersync/test', desc: '19-test conformance suite' },
 ];

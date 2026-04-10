@@ -7,6 +7,7 @@
     "adapters",
     "integrations",
     "react",
-    "cli"
+    "cli",
+    "playground"
   ]
 }

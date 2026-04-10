@@ -1,0 +1,42 @@
+{
+  "name": "@bettersync/pg-adapter",
+  "version": "0.0.1",
+  "description": "node-postgres (pg) adapter for bettersync",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bettersync/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "pg": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@bettersync/test-utils": "workspace:*",
+    "@testcontainers/postgresql": "^10.13.0",
+    "pg": "^8.13.0",
+    "@types/pg": "^8.11.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": { "access": "public" }
+}

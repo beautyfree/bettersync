@@ -41,6 +41,30 @@
       "require": "./dist/adapters/pglite.cjs",
       "default": "./dist/adapters/pglite.js"
     },
+    "./adapters/pg": {
+      "types": "./dist/adapters/pg.d.ts",
+      "import": "./dist/adapters/pg.js",
+      "require": "./dist/adapters/pg.cjs",
+      "default": "./dist/adapters/pg.js"
+    },
+    "./adapters/kysely": {
+      "types": "./dist/adapters/kysely.d.ts",
+      "import": "./dist/adapters/kysely.js",
+      "require": "./dist/adapters/kysely.cjs",
+      "default": "./dist/adapters/kysely.js"
+    },
+    "./adapters/prisma": {
+      "types": "./dist/adapters/prisma.d.ts",
+      "import": "./dist/adapters/prisma.js",
+      "require": "./dist/adapters/prisma.cjs",
+      "default": "./dist/adapters/prisma.js"
+    },
+    "./adapters/better-sqlite3": {
+      "types": "./dist/adapters/better-sqlite3.d.ts",
+      "import": "./dist/adapters/better-sqlite3.js",
+      "require": "./dist/adapters/better-sqlite3.cjs",
+      "default": "./dist/adapters/better-sqlite3.js"
+    },
     "./next-js": {
       "types": "./dist/next-js.d.ts",
       "import": "./dist/next-js.js",
@@ -88,12 +112,18 @@
     "@bettersync/memory-adapter": "workspace:*",
     "@bettersync/server": "workspace:*",
     "@bettersync/pglite-adapter": "workspace:*",
+    "@bettersync/pg-adapter": "workspace:*",
+    "@bettersync/kysely-adapter": "workspace:*",
+    "@bettersync/prisma-adapter": "workspace:*",
+    "@bettersync/better-sqlite3-adapter": "workspace:*",
     "@bettersync/test-utils": "workspace:*"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.2.0",
     "better-sqlite3": ">=11.0.0",
+    "@prisma/client": ">=5.0.0",
     "drizzle-orm": ">=0.30.0",
+    "kysely": ">=0.26.0",
     "express": ">=4.0.0",
     "hono": ">=4.0.0",
     "ink": ">=5.0.0",
@@ -112,6 +142,12 @@
       "optional": true
     },
     "better-sqlite3": {
+      "optional": true
+    },
+    "@prisma/client": {
+      "optional": true
+    },
+    "kysely": {
       "optional": true
     },
     "next": {
