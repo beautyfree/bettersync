@@ -1,30 +1,38 @@
 ---
 title: Introduction
-description: Tiny local-first sync for TypeScript
+description: Local-first sync for Postgres and TypeScript apps
 ---
 
 # bettersync
 
-Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-first. Drop into your existing Next.js + Drizzle/Prisma stack without replacing your data layer.
+bettersync is a local-first sync engine for TypeScript applications that need offline UX and fast collaborative updates without adopting a brand-new backend stack.
 
-## Why bettersync?
+It keeps your app responsive by writing locally first, then syncing changes to Postgres with deterministic conflict resolution. You keep your existing server architecture and database tools.
 
-| | bettersync | ElectricSQL | Zero |
-|---|---|---|---|
-| Drop into existing stack | **Yes** | No (TanStack Start) | No (own data layer) |
-| Extra infrastructure | **None** | HTTP/2 + Caddy | zero-cache service |
-| Install | **1 package** | scaffolded app | 4+ packages |
-| Conflict resolution | **HLC LWW** | CRDT shapes | server authority |
+## Why teams pick bettersync
 
-## Quick Install
+- **Drop-in architecture:** works with existing Next.js, Express, NestJS, Hono, Elysia, and Bun APIs.
+- **No extra control plane:** no dedicated sync service to manage.
+- **TypeScript-first API:** strongly typed schema and model helpers.
+- **Deterministic conflict handling:** Hybrid Logical Clock (HLC) + Last-Write-Wins.
+- **Offline-first UX:** local writes + background sync.
+
+## Quick install
 
 ```bash
 pnpm add bettersync
 ```
-
+## High-level flow
 ## How It Works
 
-- Writes go to local store first (instant, works offline)
-- `syncNow()` pushes pending + pulls remote changes
-- Server re-stamps every write with its own HLC
-- LWW: later HLC wins. Deterministic across all clients.
+1. Writes are committed to local storage immediately.
+2. `syncNow()` sends pending changes and fetches remote updates.
+3. Server timestamps writes with its own HLC.
+4. If conflicts happen, the record with newer server HLC wins.
+
+## Where to go next
+
+- [`/docs/getting-started`](/docs/getting-started): full setup in six steps.
+- [`/docs/concepts`](/docs/concepts): HLC, scope, tombstones, and merge semantics.
+- [`/docs/adapters`](/docs/adapters): Drizzle/Postgres, PGlite, memory adapter APIs.
+- [`/docs/react`](/docs/react): `SyncProvider`, `useSyncQuery`, and live updates.
