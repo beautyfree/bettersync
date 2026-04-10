@@ -41,15 +41,21 @@ export interface PGliteAdapterOptions {
 }
 
 /** Minimal PGlite interface — just the methods we use. */
-interface PGliteLike {
+/** Minimal query interface — both PGlite and PGlite Transaction implement this. */
+interface PGliteQueryable {
   query<T = Row>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>
-  exec(sql: string): Promise<void>
-  transaction<T>(fn: (tx: PGliteLike) => Promise<T>): Promise<T>
+  exec(sql: string): Promise<unknown>
+}
+
+/** Full PGlite instance (has transaction support). */
+interface PGliteLike extends PGliteQueryable {
+  transaction<T>(fn: (tx: PGliteQueryable) => Promise<T>): Promise<T>
 }
 
 export function pgliteAdapter(pg: PGliteLike, opts: PGliteAdapterOptions = {}): SyncAdapter {
   const hlcField = opts.hlcField ?? 'changed'
   let schema: SyncSchema | null = null
+  const rootPg = pg // keep reference for transaction support
 
   function s(): SyncSchema {
     if (!schema) throw new Error('pgliteAdapter: call ensureSyncTables first')
@@ -82,7 +88,7 @@ export function pgliteAdapter(pg: PGliteLike, opts: PGliteAdapterOptions = {}): 
     return { sql: parts.join(' AND '), params }
   }
 
-  function makeAdapter(conn: PGliteLike): SyncAdapter {
+  function makeAdapter(conn: PGliteQueryable, isTransaction = false): SyncAdapter {
     async function q<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
       const result = await conn.query<T>(sql, params)
       return result.rows
@@ -301,8 +307,13 @@ export function pgliteAdapter(pg: PGliteLike, opts: PGliteAdapterOptions = {}): 
       },
 
       async transaction(fn) {
-        return conn.transaction(async (tx) => {
-          const txAdapter = makeAdapter(tx)
+        if (isTransaction) {
+          // Already in a transaction — PGlite doesn't support nested tx.
+          // Just run inline (savepoints not supported in PGlite v0.2).
+          return fn(adapter)
+        }
+        return rootPg.transaction(async (tx) => {
+          const txAdapter = makeAdapter(tx, true)
           const orig = txAdapter.ensureSyncTables
           txAdapter.ensureSyncTables = async () => {}
           try {
