@@ -35,6 +35,12 @@
       "require": "./dist/adapters/memory.cjs",
       "default": "./dist/adapters/memory.js"
     },
+    "./adapters/pglite": {
+      "types": "./dist/adapters/pglite.d.ts",
+      "import": "./dist/adapters/pglite.js",
+      "require": "./dist/adapters/pglite.cjs",
+      "default": "./dist/adapters/pglite.js"
+    },
     "./next-js": {
       "types": "./dist/next-js.d.ts",
       "import": "./dist/next-js.js",
@@ -75,6 +81,7 @@
     "@better-sync/drizzle-adapter": "workspace:*",
     "@better-sync/memory-adapter": "workspace:*",
     "@better-sync/server": "workspace:*",
+    "@better-sync/pglite-adapter": "workspace:*",
     "@better-sync/test-utils": "workspace:*"
   },
   "peerDependencies": {

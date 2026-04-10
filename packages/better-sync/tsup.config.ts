@@ -9,6 +9,7 @@ export default defineConfig({
     react: 'src/react.tsx',
     'adapters/drizzle': 'src/adapters/drizzle.ts',
     'adapters/memory': 'src/adapters/memory.ts',
+    'adapters/pglite': 'src/adapters/pglite.ts',
     test: 'src/test.ts',
   },
   format: ['esm', 'cjs'],

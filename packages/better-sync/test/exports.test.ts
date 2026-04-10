@@ -47,6 +47,11 @@ describe('better-sync subpath exports', () => {
     expect(typeof mod.getConformanceTestsByTag).toBe('function')
   })
 
+  it('better-sync/adapters/pglite exports pgliteAdapter', async () => {
+    const mod = await import('../src/adapters/pglite')
+    expect(typeof mod.pgliteAdapter).toBe('function')
+  })
+
   it('better-sync/next-js exports toNextJsHandler', async () => {
     const mod = await import('../src/next-js')
     expect(typeof mod.toNextJsHandler).toBe('function')
