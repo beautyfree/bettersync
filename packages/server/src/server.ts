@@ -9,6 +9,8 @@
 
 import {
   type ChangeSet,
+  decodeHlc,
+  HLC_ZERO,
   HLClock,
   type HLClockOptions,
   type PaginationCursor,
@@ -77,6 +79,12 @@ export interface CreateSyncServerOptions<Ctx = any> {
   afterWriteInTransactionBudgetMs?: number
   /** HLC clock options (node id, custom clock function). */
   clock?: HLClockOptions
+  /**
+   * Tombstone retention in milliseconds. Clients that haven't synced within
+   * this window get `staleClient: true` and must call `recover()`.
+   * Default: 30 days. Set to 0 to disable stale detection.
+   */
+  tombstoneRetentionMs?: number
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
@@ -97,6 +105,7 @@ export function createSyncServer<Ctx>(
   const hlc = new HLClock(options.clock ?? {})
   const hlcField = options.hlcField ?? 'changed'
   const budget = options.afterWriteInTransactionBudgetMs ?? DEFAULT_HOOK_BUDGET_MS
+  const retentionMs = options.tombstoneRetentionMs ?? 30 * 24 * 60 * 60 * 1000 // 30 days
 
   const server: SyncServer<Ctx> = {
     hlc,
@@ -112,10 +121,16 @@ export function createSyncServer<Ctx>(
       // ─── HLC merge with client time ─────────────────────────────
       hlc.receive(request.clientTime)
 
+      // ─── Stale client detection ─────────────────────────────────
+      const isStale = retentionMs > 0 && isClientStale(request.since, retentionMs)
+
       const limit = Math.min(request.limit ?? 1000, 1000)
       const appliedChanges: HookChangeDescriptor[] = []
 
       // ─── Apply client writes inside transaction ─────────────────
+      // We STILL apply client writes even for stale clients — their
+      // pending data is valid. We just can't guarantee tombstone
+      // consistency, so we flag staleClient in the response.
       const response: SyncResponse = await options.database.transaction(async (tx) => {
         await applyClientChanges({
           tx,
@@ -146,6 +161,7 @@ export function createSyncServer<Ctx>(
           tombstones,
           hasMore,
           cursor,
+          ...(isStale ? { staleClient: true } : {}),
         }
       })
 
@@ -174,6 +190,21 @@ function isProtocolCompatible(clientVersion: string): boolean {
   const [clientMajor] = clientVersion.split('.')
   const [serverMajor] = PROTOCOL_VERSION.split('.')
   return clientMajor === serverMajor
+}
+
+/**
+ * Check if a client's `since` HLC is older than the retention window.
+ * Extracts the wall clock ms from the HLC and compares to now.
+ */
+function isClientStale(sinceHlc: string, retentionMs: number): boolean {
+  if (sinceHlc === HLC_ZERO) return false // First sync is not stale
+  try {
+    const parts = decodeHlc(sinceHlc)
+    const age = Date.now() - parts.wall
+    return age > retentionMs
+  } catch {
+    return false
+  }
 }
 
 // ─── Client → server write pipeline ─────────────────────────────────

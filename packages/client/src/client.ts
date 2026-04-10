@@ -83,6 +83,12 @@ export interface SyncClient<Ctx = any> {
   stop(): void
   /** Manual sync trigger. */
   syncNow(): Promise<SyncResult>
+  /**
+   * Recover from stale client state. Call when syncNow returns staleClient.
+   * Pushes any remaining pending writes, wipes local synced data, and
+   * does a full refetch from the server (since = 0).
+   */
+  recover(): Promise<SyncResult>
   /** Access a model's local-first CRUD API. */
   model<M extends string>(model: M): ModelAccessor
 }
@@ -327,6 +333,33 @@ export function createSyncClient<Ctx>(
       }
       syncing = true
       try {
+        return await doSync()
+      } finally {
+        syncing = false
+      }
+    },
+
+    async recover() {
+      ensureStarted()
+      syncing = true
+      try {
+        // Step 1: push any remaining pending writes (server still accepts them)
+        await doSync()
+
+        // Step 2: wipe local synced data (keep internal tables)
+        for (const modelKey of Object.keys(options.schema)) {
+          // Delete all rows in this model's local table
+          const rows = await options.database.findMany({ model: modelKey })
+          for (const row of rows) {
+            const pkField = getPrimaryKey(modelKey, getModelDef(modelKey))
+            await options.database.delete({ model: modelKey, where: { [pkField]: row[pkField] } })
+          }
+        }
+
+        // Step 3: reset sync marker to zero (full refetch)
+        await setMeta('last_sync_hlc', HLC_ZERO)
+
+        // Step 4: full sync from zero
         return await doSync()
       } finally {
         syncing = false
