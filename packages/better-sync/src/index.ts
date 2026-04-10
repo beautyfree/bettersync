@@ -87,6 +87,10 @@ export {
   type DecideMergeResult,
 } from '@better-sync/core'
 
+// ─── Facade ─────────────────────────────────────────────────────────
+export { betterSync } from './better-sync'
+export type { BetterSyncOptions } from './better-sync'
+
 // ─── Server ─────────────────────────────────────────────────────────
 export { createSyncServer } from '@better-sync/server'
 export type {

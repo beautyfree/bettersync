@@ -46,7 +46,12 @@ export interface PendingOp {
 export interface CreateSyncClientOptions<Ctx = any> {
   database: SyncAdapter
   schema: SyncSchema<Ctx>
-  transport: Transport
+  /** Full transport function, OR a URL string for HTTP sync. */
+  transport?: Transport
+  /** Shorthand: sync endpoint URL. Creates an HTTP transport automatically. */
+  syncUrl?: string
+  /** Headers to include with every sync HTTP request (e.g. Authorization). */
+  headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>)
   /** Field on each row that stores the HLC. Default `'changed'`. */
   hlcField?: string
   /** HLC clock options (node id, custom clock). */
@@ -115,6 +120,13 @@ const INTERNAL_SCHEMA_META = {
 export function createSyncClient<Ctx>(
   options: CreateSyncClientOptions<Ctx>,
 ): SyncClient<Ctx> {
+  // Resolve transport: explicit function > syncUrl > error
+  const transport: Transport = options.transport ?? (
+    options.syncUrl
+      ? createHttpTransport(options.syncUrl, options.headers)
+      : (() => { throw new Error('createSyncClient: provide either `transport` or `syncUrl`') })()
+  )
+
   const clock = new HLClock(options.clock ?? {})
   const hlcField = options.hlcField ?? 'changed'
   const limit = options.limit ?? 1000
@@ -427,7 +439,7 @@ export function createSyncClient<Ctx>(
       ...(tombstones.length > 0 ? { tombstones } : {}),
     }
 
-    const response = await options.transport(request)
+    const response = await transport(request)
 
     clock.receive(response.serverTime)
 
@@ -469,4 +481,30 @@ export function createSyncClient<Ctx>(
 let idCounter = 0
 function generateId(): string {
   return `_sp_${Date.now()}_${++idCounter}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/**
+ * Create an HTTP transport from a URL string.
+ * Used when the user passes `syncUrl` instead of a custom `transport`.
+ */
+function createHttpTransport(
+  url: string,
+  headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>),
+): Transport {
+  return async (request) => {
+    const resolvedHeaders = typeof headers === 'function' ? await headers() : (headers ?? {})
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...resolvedHeaders },
+      body: JSON.stringify(request),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      const msg = (body as Record<string, unknown>)?.error
+        ? JSON.stringify((body as Record<string, unknown>).error)
+        : `Sync failed: ${res.status}`
+      throw new Error(msg)
+    }
+    return res.json() as Promise<SyncResponse>
+  }
 }
