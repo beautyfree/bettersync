@@ -1,14 +1,14 @@
 /**
- * `better-sync generate` command.
+ * `bettersync generate` command.
  *
  * Reads the user's sync config, generates SQL for their schema.
  *
  * Usage:
- *   better-sync generate                    # CREATE TABLE (new DB)
- *   better-sync generate --alter            # ALTER TABLE (existing DB)
- *   better-sync generate --alter --backfill # ALTER + backfill HLC
- *   better-sync generate --output schema.sql
- *   better-sync generate --config src/lib/sync.ts
+ *   bettersync generate                    # CREATE TABLE (new DB)
+ *   bettersync generate --alter            # ALTER TABLE (existing DB)
+ *   bettersync generate --alter --backfill # ALTER + backfill HLC
+ *   bettersync generate --output schema.sql
+ *   bettersync generate --config src/lib/sync.ts
  */
 
 import { existsSync } from 'node:fs'
@@ -45,10 +45,10 @@ export const generate = new Command('generate')
         '\n\n' +
         'Create a sync config file (e.g. ' + chalk.yellow('src/lib/sync.ts') + '):' +
         '\n\n' +
-        chalk.gray(`  import { betterSync } from 'better-sync'\n`) +
+        chalk.gray(`  import { betterSync } from 'bettersync'\n`) +
         chalk.gray(`  export const sync = betterSync({ ... })\n`) +
         '\n' +
-        'Or specify the path: ' + chalk.yellow('better-sync generate --config path/to/sync.ts'),
+        'Or specify the path: ' + chalk.yellow('bettersync generate --config path/to/sync.ts'),
       )
       process.exit(1)
     }
@@ -105,7 +105,7 @@ export const generate = new Command('generate')
       console.log(chalk.gray('\nNext steps:'))
       console.log(chalk.gray('  1. Review the SQL above'))
       console.log(chalk.gray('  2. Run it against your database'))
-      console.log(chalk.gray('  3. Deploy your server with better-sync'))
+      console.log(chalk.gray('  3. Deploy your server with bettersync'))
     } else {
       console.log(chalk.gray('\nNext steps:'))
       console.log(chalk.gray('  1. Run the SQL against your database, or'))

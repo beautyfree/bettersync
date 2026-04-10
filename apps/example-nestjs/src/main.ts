@@ -5,6 +5,6 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule)
   app.enableCors({ origin: true, credentials: true })
   await app.listen(3000)
-  console.log('NestJS + better-sync running on http://localhost:3000')
+  console.log('NestJS + bettersync running on http://localhost:3000')
 }
 bootstrap()

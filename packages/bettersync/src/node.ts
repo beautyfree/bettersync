@@ -1,14 +1,14 @@
 /**
- * better-sync/node — Node.js adapter for Express, Fastify, NestJS, etc.
+ * bettersync/node — Node.js adapter for Express, Fastify, NestJS, etc.
  *
  * Converts Node.js IncomingMessage → Web API Request → sync.handler → Response → res.
  *
  * Usage with Express:
- *   import { toNodeHandler } from 'better-sync/node'
+ *   import { toNodeHandler } from 'bettersync/node'
  *   app.all('/api/sync', toNodeHandler(sync))
  *
  * Usage with Fastify:
- *   import { toNodeHandler } from 'better-sync/node'
+ *   import { toNodeHandler } from 'bettersync/node'
  *   fastify.all('/api/sync', async (req, reply) => {
  *     const response = await sync.handler(toWebRequest(req.raw))
  *     reply.status(response.status).send(await response.json())
@@ -82,7 +82,7 @@ async function sendWebResponse(webRes: Response, nodeRes: NodeResponse): Promise
  * Create a Node.js HTTP handler for Express/Connect/NestJS.
  *
  * ```ts
- * import { toNodeHandler } from 'better-sync/node'
+ * import { toNodeHandler } from 'bettersync/node'
  * app.post('/api/sync', toNodeHandler(sync))
  * ```
  */

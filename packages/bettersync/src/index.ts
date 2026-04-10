@@ -1,15 +1,15 @@
 /**
- * better-sync — main entry point.
+ * bettersync — main entry point.
  *
  * Re-exports core types, schema DSL, HLC, errors, and both
  * createSyncServer + createSyncClient for convenience.
  *
  * For subpath-specific imports use:
- *   better-sync/client
- *   better-sync/server
- *   better-sync/adapters/drizzle
- *   better-sync/adapters/memory
- *   better-sync/test
+ *   bettersync/client
+ *   bettersync/server
+ *   bettersync/adapters/drizzle
+ *   bettersync/adapters/memory
+ *   bettersync/test
  */
 
 // ─── Core (types, HLC, schema, errors, protocol, merge) ────────────
@@ -88,8 +88,8 @@ export {
 } from '@bettersync/core'
 
 // ─── Facade ─────────────────────────────────────────────────────────
-export { betterSync } from './better-sync'
-export type { BetterSyncOptions } from './better-sync'
+export { betterSync } from './bettersync'
+export type { BetterSyncOptions } from './bettersync'
 
 // ─── Server ─────────────────────────────────────────────────────────
 export { createSyncServer } from '@bettersync/server'

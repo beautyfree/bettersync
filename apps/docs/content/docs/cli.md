@@ -15,7 +15,7 @@ npx @bettersync/cli --help
 
 ## init
 
-Scaffold better-sync into an existing project:
+Scaffold bettersync into an existing project:
 
 ```bash
 npx @bettersync/cli init

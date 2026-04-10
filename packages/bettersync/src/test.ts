@@ -1,5 +1,5 @@
 /**
- * better-sync/test — testing utilities and conformance suite.
+ * bettersync/test — testing utilities and conformance suite.
  */
 export {
   CONFORMANCE_TESTS,

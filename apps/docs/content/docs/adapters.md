@@ -10,7 +10,7 @@ description: Drizzle, PGlite, Memory, and how to write your own.
 Pass your Drizzle table objects directly. Column mapping is automatic.
 
 ```ts
-import { drizzleAdapter } from 'better-sync/adapters/drizzle'
+import { drizzleAdapter } from 'bettersync/adapters/drizzle'
 import { projects, tasks } from './db/schema'
 
 const sync = betterSync({
@@ -28,7 +28,7 @@ Uses Drizzle query builder for CRUD. Raw SQL only for `ON CONFLICT ... WHERE` (c
 Postgres in WASM. Same SQL dialect as the server.
 
 ```ts
-import { pgliteAdapter } from 'better-sync/adapters/pglite'
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
 import { PGlite } from '@electric-sql/pglite'
 
 const pg = new PGlite('idb://my-app')  // IndexedDB persistence
@@ -45,7 +45,7 @@ Bundle: ~1.5MB gzip. Use dynamic import in Next.js to avoid SSR issues.
 In-memory adapter for unit tests and prototyping.
 
 ```ts
-import { memoryAdapter } from 'better-sync/adapters/memory'
+import { memoryAdapter } from 'bettersync/adapters/memory'
 
 const adapter = memoryAdapter()
 ```
@@ -55,7 +55,7 @@ const adapter = memoryAdapter()
 Every adapter must pass 19 conformance tests:
 
 ```ts
-import { CONFORMANCE_TESTS } from 'better-sync/test'
+import { CONFORMANCE_TESTS } from 'bettersync/test'
 
 describe('my-adapter conformance', () => {
   for (const test of CONFORMANCE_TESTS) {

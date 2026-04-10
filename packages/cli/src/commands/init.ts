@@ -1,10 +1,10 @@
 /**
- * `better-sync init` — interactive wizard that scaffolds sync into
+ * `bettersync init` — interactive wizard that scaffolds sync into
  * an existing project. Inspired by better-auth's init command.
  *
  * Steps:
  *   1. Detect package manager + framework
- *   2. Install better-sync + PGlite
+ *   2. Install bettersync + PGlite
  *   3. Prompt for database adapter
  *   4. Generate lib/sync.ts
  *   5. Generate lib/sync-client.ts
@@ -130,14 +130,14 @@ async function detectFramework(cwd: string): Promise<FrameworkInfo> {
 
 function generateSyncConfig(adapter: string): string {
   const adapterImport = adapter === 'drizzle'
-    ? `import { drizzleAdapter } from 'better-sync/adapters/drizzle'\nimport { db } from './db' // your Drizzle instance`
-    : `import { memoryAdapter } from 'better-sync/adapters/memory'`
+    ? `import { drizzleAdapter } from 'bettersync/adapters/drizzle'\nimport { db } from './db' // your Drizzle instance`
+    : `import { memoryAdapter } from 'bettersync/adapters/memory'`
 
   const adapterCall = adapter === 'drizzle'
     ? 'drizzleAdapter(db)'
     : 'memoryAdapter()'
 
-  return `import { betterSync } from 'better-sync'
+  return `import { betterSync } from 'bettersync'
 ${adapterImport}
 
 export const sync = betterSync({
@@ -161,8 +161,8 @@ export const syncSchema = sync.schema
 }
 
 function generateSyncClient(): string {
-  return `import { createSyncClient } from 'better-sync/client'
-import { pgliteAdapter } from 'better-sync/adapters/pglite'
+  return `import { createSyncClient } from 'bettersync/client'
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
 import { PGlite } from '@electric-sql/pglite'
 import { syncSchema } from './sync'
 
@@ -178,7 +178,7 @@ export const syncClient = createSyncClient({
 
 function generateNextAppRoute(): string {
   return `import { sync } from '@/lib/sync'
-import { toNextJsHandler } from 'better-sync/next-js'
+import { toNextJsHandler } from 'bettersync/next-js'
 
 export const POST = toNextJsHandler(sync, {
   auth: async (req) => {
@@ -195,7 +195,7 @@ export const POST = toNextJsHandler(sync, {
 function generateNextPagesRoute(): string {
   return `import type { NextApiRequest, NextApiResponse } from 'next'
 import { sync } from '@/lib/sync'
-import { parseSyncRequest } from 'better-sync'
+import { parseSyncRequest } from 'bettersync'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end()
@@ -214,7 +214,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 function generateGenericHandler(): string {
   return `import { sync } from './sync'
-import { parseSyncRequest } from 'better-sync'
+import { parseSyncRequest } from 'bettersync'
 
 /**
  * Handle POST /sync requests.
@@ -231,7 +231,7 @@ function generateDemoPage(): string {
   return `'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { useSync, useSyncQuery } from 'better-sync/react'
+import { useSync, useSyncQuery } from 'bettersync/react'
 
 export default function SyncDemo() {
   const sync = useSync()
@@ -280,7 +280,7 @@ export default function SyncDemo() {
 // ─── Main command ───────────────────────────────────────────────────
 
 export const init = new Command('init')
-  .description('Scaffold better-sync into your project')
+  .description('Scaffold bettersync into your project')
   .option('-c, --cwd <cwd>', 'working directory', process.cwd())
   .option('-y, --yes', 'skip prompts, use defaults', false)
   .action(async (opts) => {
@@ -288,7 +288,7 @@ export const init = new Command('init')
     const auto = opts.yes
 
     console.log('')
-    console.log(chalk.bold('  better-sync init'))
+    console.log(chalk.bold('  bettersync init'))
     console.log(chalk.gray('  Scaffold local-first sync into your project\n'))
 
     // ─── 1. Detect environment ────────────────────────────────
@@ -301,7 +301,7 @@ export const init = new Command('init')
     const libDir = `${prefix}lib`
 
     // ─── 2. Install deps ──────────────────────────────────────
-    const depsNeeded = ['better-sync', '@electric-sql/pglite']
+    const depsNeeded = ['bettersync', '@electric-sql/pglite']
     const shouldInstall = auto || await confirm(`\nInstall ${depsNeeded.join(' + ')}?`)
 
     if (shouldInstall) {
@@ -364,7 +364,7 @@ export const init = new Command('init')
 
     // ─── 8. Summary ───────────────────────────────────────────
     console.log('')
-    console.log(chalk.green.bold('  ✓ better-sync initialized!'))
+    console.log(chalk.green.bold('  ✓ bettersync initialized!'))
     console.log('')
     console.log(chalk.gray('  Created files:'))
     console.log(`    ${chalk.cyan(libDir + '/sync.ts')}         — sync config`)

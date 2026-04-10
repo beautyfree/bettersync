@@ -1,11 +1,11 @@
 {
   "name": "@bettersync/cli",
   "version": "0.0.1",
-  "description": "CLI for better-sync — generate migrations, scaffold projects",
+  "description": "CLI for bettersync — generate migrations, scaffold projects",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "better-sync": "./dist/index.mjs"
+    "bettersync": "./dist/index.mjs"
   },
   "files": ["dist"],
   "scripts": {

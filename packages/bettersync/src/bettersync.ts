@@ -6,8 +6,8 @@
  * a server instance ready to mount.
  *
  * Usage:
- *   import { betterSync } from 'better-sync'
- *   import { memoryAdapter } from 'better-sync/adapters/memory'
+ *   import { betterSync } from 'bettersync'
+ *   import { memoryAdapter } from 'bettersync/adapters/memory'
  *
  *   export const sync = betterSync({
  *     database: memoryAdapter(),

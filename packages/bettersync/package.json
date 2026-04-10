@@ -1,5 +1,5 @@
 {
-  "name": "better-sync",
+  "name": "bettersync",
   "version": "0.0.1",
   "description": "Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-first. Drop-in to your existing Next.js + Drizzle/Prisma stack.",
   "license": "Apache-2.0",

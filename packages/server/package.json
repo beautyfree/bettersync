@@ -1,7 +1,7 @@
 {
   "name": "@bettersync/server",
   "version": "0.0.1",
-  "description": "Framework-agnostic sync request handler for better-sync",
+  "description": "Framework-agnostic sync request handler for bettersync",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",

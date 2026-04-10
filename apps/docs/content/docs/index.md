@@ -3,13 +3,13 @@ title: Introduction
 description: Tiny local-first sync for TypeScript. Bidirectional. Drop-in.
 ---
 
-# better-sync
+# bettersync
 
 Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-first. Drop into your existing Next.js + Drizzle/Prisma stack without replacing your data layer.
 
-## Why better-sync?
+## Why bettersync?
 
-| | better-sync | ElectricSQL | Zero |
+| | bettersync | ElectricSQL | Zero |
 |---|---|---|---|
 | Drop into existing stack | **Yes** | No (TanStack Start) | No (own data layer) |
 | Extra infrastructure | **None** | HTTP/2 + Caddy | zero-cache service |
@@ -20,7 +20,7 @@ Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-f
 ## Quick Install
 
 ```bash
-pnpm add better-sync
+pnpm add bettersync
 ```
 
 ## How It Works

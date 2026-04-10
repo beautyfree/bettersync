@@ -8,7 +8,7 @@ description: From zero to working sync in 6 steps.
 ## 1. Install
 
 ```bash
-pnpm add better-sync
+pnpm add bettersync
 # For browser client:
 pnpm add @electric-sql/pglite
 ```
@@ -18,8 +18,8 @@ pnpm add @electric-sql/pglite
 Create `lib/sync.ts` — one file, like better-auth:
 
 ```ts title="lib/sync.ts"
-import { betterSync } from 'better-sync'
-import { drizzleAdapter } from 'better-sync/adapters/drizzle'
+import { betterSync } from 'bettersync'
+import { drizzleAdapter } from 'bettersync/adapters/drizzle'
 import { db } from './db'
 
 export const sync = betterSync({
@@ -59,7 +59,7 @@ export const POST = sync.handler
 ### Express / NestJS
 
 ```ts
-import { toNodeHandler } from 'better-sync/node'
+import { toNodeHandler } from 'bettersync/node'
 app.post('/api/sync', toNodeHandler(sync))
 ```
 
@@ -86,8 +86,8 @@ Run the generated SQL against your database.
 ## 5. Create Client
 
 ```ts title="lib/sync-client.ts"
-import { createSyncClient } from 'better-sync/client'
-import { pgliteAdapter } from 'better-sync/adapters/pglite'
+import { createSyncClient } from 'bettersync/client'
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
 import { PGlite } from '@electric-sql/pglite'
 import { syncSchema } from './sync'
 
@@ -101,7 +101,7 @@ export const syncClient = createSyncClient({
 ## 6. Use in React
 
 ```tsx
-import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'better-sync/react'
+import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'bettersync/react'
 
 function App() {
   return (

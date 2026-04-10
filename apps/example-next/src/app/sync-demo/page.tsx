@@ -11,8 +11,8 @@
  */
 
 import { useCallback, useRef, useState } from 'react'
-import { useSync, useSyncQuery } from 'better-sync/react'
-import type { Row } from 'better-sync'
+import { useSync, useSyncQuery } from 'bettersync/react'
+import type { Row } from 'bettersync'
 
 export default function SyncDemoPage() {
   const sync = useSync()

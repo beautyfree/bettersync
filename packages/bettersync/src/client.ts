@@ -1,5 +1,5 @@
 /**
- * better-sync/client — local-first sync client.
+ * bettersync/client — local-first sync client.
  */
 export {
   createSyncClient,

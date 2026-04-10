@@ -1,7 +1,7 @@
 /**
  * @bettersync/pglite-adapter
  *
- * PGlite (Postgres WASM) adapter for better-sync.
+ * PGlite (Postgres WASM) adapter for bettersync.
  * Same Postgres SQL dialect as the server-side Drizzle adapter.
  * Runs in browser (IndexedDB), Node (filesystem), or in-memory.
  * No Docker required for tests.

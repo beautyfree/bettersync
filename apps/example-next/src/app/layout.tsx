@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import { SyncClientProvider } from '@/components/sync-provider'
 
 export const metadata = {
-  title: 'better-sync demo',
-  description: 'Two-tab live sync with PGlite + better-sync',
+  title: 'bettersync demo',
+  description: 'Two-tab live sync with PGlite + bettersync',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

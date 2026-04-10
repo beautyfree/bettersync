@@ -1,5 +1,5 @@
 /**
- * better-sync/server — framework-agnostic sync handler.
+ * bettersync/server — framework-agnostic sync handler.
  */
 export {
   createSyncServer,

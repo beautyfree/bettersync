@@ -1,10 +1,10 @@
 /**
- * better-sync/next-js — Next.js App Router handler.
+ * bettersync/next-js — Next.js App Router handler.
  *
  * Usage:
  *   // app/api/sync/route.ts
  *   import { sync } from '@/server/sync'
- *   import { toNextJsHandler } from 'better-sync/next-js'
+ *   import { toNextJsHandler } from 'bettersync/next-js'
  *
  *   export const POST = toNextJsHandler(sync, {
  *     auth: async (req) => {

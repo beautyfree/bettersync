@@ -4,12 +4,12 @@
  * Uses syncUrl shorthand (auto HTTP transport).
  * PGlite for browser-side Postgres.
  */
-import { createSyncClient } from 'better-sync/client'
-import { pgliteAdapter } from 'better-sync/adapters/pglite'
+import { createSyncClient } from 'bettersync/client'
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
 import { PGlite } from '@electric-sql/pglite'
 import { syncSchema } from './sync'
 
-const pg = new PGlite('idb://better-sync-demo')
+const pg = new PGlite('idb://bettersync-demo')
 
 export const syncClient = createSyncClient({
   database: pgliteAdapter(pg),

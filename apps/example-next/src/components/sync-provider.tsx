@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { SyncProvider, SyncDevtools } from 'better-sync/react'
-import type { SyncClient } from 'better-sync/client'
+import { SyncProvider, SyncDevtools } from 'bettersync/react'
+import type { SyncClient } from 'bettersync/client'
 
 export function SyncClientProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<SyncClient | null>(null)

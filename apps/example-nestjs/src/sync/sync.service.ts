@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common'
-import { betterSync } from 'better-sync'
-import { memoryAdapter } from 'better-sync/adapters/memory'
+import { betterSync } from 'bettersync'
+import { memoryAdapter } from 'bettersync/adapters/memory'
 
 /**
  * SyncService — singleton that holds the sync server instance.
  *
  * In production, replace memoryAdapter with drizzleAdapter:
  *
- *   import { drizzleAdapter } from 'better-sync/adapters/drizzle'
+ *   import { drizzleAdapter } from 'bettersync/adapters/drizzle'
  *   import { projects } from '../db/schema'
  *
  *   database: drizzleAdapter(db, { schema: { project: projects } }),

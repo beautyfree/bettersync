@@ -1,5 +1,5 @@
 /**
- * better-sync CLI
+ * bettersync CLI
  *
  * Usage:
  *   npx @bettersync/cli generate          # CREATE TABLE for new DB
@@ -12,8 +12,8 @@ import { generate } from './commands/generate'
 import { init } from './commands/init'
 
 const program = new Command()
-  .name('better-sync')
-  .description('CLI tools for better-sync')
+  .name('bettersync')
+  .description('CLI tools for bettersync')
   .version('0.0.1')
 
 program.addCommand(init)

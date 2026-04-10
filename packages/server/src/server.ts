@@ -198,7 +198,7 @@ export function createSyncServer<Ctx>(
             // Intentional: afterCommit errors should not affect the sync response.
             // In production, wire this to a logger.
             // biome-ignore lint/suspicious/noConsole: library fallback logger
-            console.error('[better-sync] afterCommit hook failed:', err)
+            console.error('[bettersync] afterCommit hook failed:', err)
           })
       }
 

@@ -2,7 +2,7 @@
  * Typed errors for @bettersync/core with structural type guards.
  *
  * Why structural and not `instanceof`: when @bettersync/core is installed
- * twice (e.g. once via `better-sync`, once via a plugin's transitive dep),
+ * twice (e.g. once via `bettersync`, once via a plugin's transitive dep),
  * `instanceof` fails because the two copies have different class identities.
  * Structural guards via a brand property work across instances.
  */
@@ -78,7 +78,7 @@ export class SchemaViolationError extends SyncError {
       'SCHEMA_VIOLATION',
       message,
       hint,
-      'https://docs.better-sync.dev/errors/schema-violation',
+      'https://docs.bettersync.dev/errors/schema-violation',
       param,
     )
     this.name = 'SchemaViolationError'
@@ -91,7 +91,7 @@ export class ScopeViolationError extends SyncError {
       'SCOPE_VIOLATION',
       message,
       hint ?? 'Check that the row matches the scope predicate for the authenticated context',
-      'https://docs.better-sync.dev/errors/scope-violation',
+      'https://docs.bettersync.dev/errors/scope-violation',
     )
     this.name = 'ScopeViolationError'
   }
@@ -103,7 +103,7 @@ export class HLCRegressionError extends SyncError {
       'HLC_REGRESSION',
       message,
       'This usually self-resolves after the next tick. Persistent regressions indicate clock skew.',
-      'https://docs.better-sync.dev/errors/hlc-regression',
+      'https://docs.bettersync.dev/errors/hlc-regression',
     )
     this.name = 'HLCRegressionError'
   }
@@ -115,7 +115,7 @@ export class HLCOverflowError extends SyncError {
       'HLC_OVERFLOW',
       message,
       'You are generating > 65535 events per millisecond. Batch your writes or rate-limit.',
-      'https://docs.better-sync.dev/errors/hlc-overflow',
+      'https://docs.bettersync.dev/errors/hlc-overflow',
     )
     this.name = 'HLCOverflowError'
   }
@@ -127,7 +127,7 @@ export class ProtocolVersionMismatchError extends SyncError {
       'PROTOCOL_VERSION_MISMATCH',
       `Client protocol version ${clientVersion} is incompatible with server ${serverVersion}`,
       'Upgrade the client to a matching major version.',
-      'https://docs.better-sync.dev/errors/protocol-version-mismatch',
+      'https://docs.bettersync.dev/errors/protocol-version-mismatch',
     )
     this.name = 'ProtocolVersionMismatchError'
   }
@@ -139,7 +139,7 @@ export class BatchTooLargeError extends SyncError {
       'BATCH_TOO_LARGE',
       `Sync batch contains ${actual} changes, exceeds limit of ${limit}`,
       'Reduce limit, or split changes into smaller batches.',
-      'https://docs.better-sync.dev/errors/batch-too-large',
+      'https://docs.bettersync.dev/errors/batch-too-large',
     )
     this.name = 'BatchTooLargeError'
   }
@@ -151,7 +151,7 @@ export class StaleClientError extends SyncError {
       'STALE_CLIENT',
       'Client has not synced within the tombstone retention window',
       'Call sync.recover() to push pending writes and refetch full snapshot.',
-      'https://docs.better-sync.dev/errors/stale-client',
+      'https://docs.bettersync.dev/errors/stale-client',
     )
     this.name = 'StaleClientError'
   }
@@ -165,7 +165,7 @@ export class AdapterError extends SyncError {
       'ADAPTER_ERROR',
       `Adapter "${adapterId}" failed: ${originalMessage}`,
       'Check the underlying database driver logs.',
-      'https://docs.better-sync.dev/errors/adapter-error',
+      'https://docs.bettersync.dev/errors/adapter-error',
     )
     this.name = 'AdapterError'
   }
@@ -177,7 +177,7 @@ export class UnauthorizedError extends SyncError {
       'UNAUTHORIZED',
       message,
       'The auth hook returned no context or threw. Check Authorization header.',
-      'https://docs.better-sync.dev/errors/unauthorized',
+      'https://docs.bettersync.dev/errors/unauthorized',
     )
     this.name = 'UnauthorizedError'
   }
@@ -189,7 +189,7 @@ export class HookTimeoutError extends SyncError {
       'HOOK_TIMEOUT',
       `Hook "${hookName}" exceeded ${budgetMs}ms time budget`,
       'Move slow work out of afterWriteInTransaction. Use a DB queue + worker pattern.',
-      'https://docs.better-sync.dev/errors/hook-timeout',
+      'https://docs.bettersync.dev/errors/hook-timeout',
     )
     this.name = 'HookTimeoutError'
   }

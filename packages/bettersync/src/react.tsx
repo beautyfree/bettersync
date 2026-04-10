@@ -1,8 +1,8 @@
 /**
- * better-sync/react — React bindings for better-sync.
+ * bettersync/react — React bindings for bettersync.
  *
  * Usage:
- *   import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'better-sync/react'
+ *   import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'bettersync/react'
  *
  *   function App() {
  *     return (
@@ -267,7 +267,7 @@ export function SyncDevtools({ position = 'bottom-right' }: SyncDevtoolsProps) {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <strong style={{ color: '#e94560' }}>better-sync devtools</strong>
+        <strong style={{ color: '#e94560' }}>bettersync devtools</strong>
         <button
           type="button"
           onClick={() => setState((s) => ({ ...s, open: false }))}

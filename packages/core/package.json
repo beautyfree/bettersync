@@ -1,7 +1,7 @@
 {
   "name": "@bettersync/core",
   "version": "0.0.1",
-  "description": "Core types, HLC, schema DSL, and adapter interface for better-sync",
+  "description": "Core types, HLC, schema DSL, and adapter interface for bettersync",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-describe('better-sync subpath exports', () => {
+describe('bettersync subpath exports', () => {
   it('root: exports core + server + client', async () => {
     const mod = await import('../src/index')
     expect(typeof mod.createSyncServer).toBe('function')
@@ -18,28 +18,28 @@ describe('better-sync subpath exports', () => {
     expect(mod.HLC_ZERO).toBe('000000000000000000000000')
   })
 
-  it('better-sync/client exports createSyncClient', async () => {
+  it('bettersync/client exports createSyncClient', async () => {
     const mod = await import('../src/client')
     expect(typeof mod.createSyncClient).toBe('function')
   })
 
-  it('better-sync/server exports createSyncServer + hooks', async () => {
+  it('bettersync/server exports createSyncServer + hooks', async () => {
     const mod = await import('../src/server')
     expect(typeof mod.createSyncServer).toBe('function')
     expect(typeof mod.runHookWithTimeout).toBe('function')
   })
 
-  it('better-sync/adapters/drizzle exports drizzleAdapter', async () => {
+  it('bettersync/adapters/drizzle exports drizzleAdapter', async () => {
     const mod = await import('../src/adapters/drizzle')
     expect(typeof mod.drizzleAdapter).toBe('function')
   })
 
-  it('better-sync/adapters/memory exports memoryAdapter', async () => {
+  it('bettersync/adapters/memory exports memoryAdapter', async () => {
     const mod = await import('../src/adapters/memory')
     expect(typeof mod.memoryAdapter).toBe('function')
   })
 
-  it('better-sync/test exports conformance suite', async () => {
+  it('bettersync/test exports conformance suite', async () => {
     const mod = await import('../src/test')
     expect(Array.isArray(mod.CONFORMANCE_TESTS)).toBe(true)
     expect(mod.CONFORMANCE_TESTS.length).toBeGreaterThan(10)
@@ -47,17 +47,17 @@ describe('better-sync subpath exports', () => {
     expect(typeof mod.getConformanceTestsByTag).toBe('function')
   })
 
-  it('better-sync/adapters/pglite exports pgliteAdapter', async () => {
+  it('bettersync/adapters/pglite exports pgliteAdapter', async () => {
     const mod = await import('../src/adapters/pglite')
     expect(typeof mod.pgliteAdapter).toBe('function')
   })
 
-  it('better-sync/next-js exports toNextJsHandler', async () => {
+  it('bettersync/next-js exports toNextJsHandler', async () => {
     const mod = await import('../src/next-js')
     expect(typeof mod.toNextJsHandler).toBe('function')
   })
 
-  it('better-sync/react exports SyncProvider, useSync, useSyncQuery, SyncDevtools', async () => {
+  it('bettersync/react exports SyncProvider, useSync, useSyncQuery, SyncDevtools', async () => {
     const mod = await import('../src/react')
     expect(typeof mod.SyncProvider).toBe('function')
     expect(typeof mod.useSync).toBe('function')
@@ -66,7 +66,7 @@ describe('better-sync subpath exports', () => {
   })
 })
 
-describe('full E2E via better-sync root import', () => {
+describe('full E2E via bettersync root import', () => {
   it('two clients sync through root exports only', async () => {
     const {
       createSyncServer,

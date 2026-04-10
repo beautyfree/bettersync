@@ -4,8 +4,8 @@
  * Schema + database + hooks all in one place.
  * Import this from your API route and from the client.
  */
-import { betterSync } from 'better-sync'
-import { memoryAdapter } from 'better-sync/adapters/memory'
+import { betterSync } from 'bettersync'
+import { memoryAdapter } from 'bettersync/adapters/memory'
 
 // Singleton — survives hot reload in dev
 const g = globalThis as unknown as { _sync?: ReturnType<typeof betterSync> }

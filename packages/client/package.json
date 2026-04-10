@@ -1,7 +1,7 @@
 {
   "name": "@bettersync/client",
   "version": "0.0.1",
-  "description": "Local-first sync client for better-sync",
+  "description": "Local-first sync client for bettersync",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",

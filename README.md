@@ -1,9 +1,9 @@
-# better-sync
+# bettersync
 
 Tiny local-first sync for TypeScript. Bidirectional. Drop into your existing Next.js + Drizzle stack without replacing your data layer.
 
 ```bash
-pnpm add better-sync
+pnpm add bettersync
 ```
 
 ## Getting Started
@@ -11,7 +11,7 @@ pnpm add better-sync
 ### 1. Install
 
 ```bash
-pnpm add better-sync
+pnpm add bettersync
 # For browser client (PGlite = Postgres in WASM):
 pnpm add @electric-sql/pglite
 ```
@@ -21,8 +21,8 @@ pnpm add @electric-sql/pglite
 Create `lib/sync.ts` — one file, like better-auth:
 
 ```ts
-import { betterSync } from 'better-sync'
-import { drizzleAdapter } from 'better-sync/adapters/drizzle'
+import { betterSync } from 'bettersync'
+import { drizzleAdapter } from 'bettersync/adapters/drizzle'
 import { db } from './db' // your Drizzle instance
 
 export const sync = betterSync({
@@ -50,7 +50,7 @@ Create `app/api/sync/route.ts`:
 
 ```ts
 import { sync } from '@/lib/sync'
-import { toNextJsHandler } from 'better-sync/next-js'
+import { toNextJsHandler } from 'bettersync/next-js'
 
 export const POST = toNextJsHandler(sync, {
   auth: async (req) => {
@@ -64,7 +64,7 @@ export const POST = toNextJsHandler(sync, {
 ### 4. Create Database Tables
 
 ```bash
-npx better-sync generate  # coming soon — for now, create tables manually
+npx bettersync generate  # coming soon — for now, create tables manually
 ```
 
 ### 5. Create Client
@@ -72,8 +72,8 @@ npx better-sync generate  # coming soon — for now, create tables manually
 Create `lib/sync-client.ts`:
 
 ```ts
-import { createSyncClient } from 'better-sync/client'
-import { pgliteAdapter } from 'better-sync/adapters/pglite'
+import { createSyncClient } from 'bettersync/client'
+import { pgliteAdapter } from 'bettersync/adapters/pglite'
 import { PGlite } from '@electric-sql/pglite'
 import { syncSchema } from './sync'
 
@@ -87,7 +87,7 @@ export const syncClient = createSyncClient({
 ### 6. Use in React
 
 ```tsx
-import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'better-sync/react'
+import { SyncProvider, useSync, useSyncQuery, SyncDevtools } from 'bettersync/react'
 import { syncClient } from '@/lib/sync-client'
 
 function App() {
@@ -126,7 +126,7 @@ That's it. Open two tabs. Add a todo in one. See it in the other.
 
 ## Why
 
-| | better-sync | ElectricSQL | Zero |
+| | bettersync | ElectricSQL | Zero |
 |---|---|---|---|
 | Drop into existing Next.js + Drizzle | **Yes** | No (TanStack Start) | No (own data layer) |
 | Extra infrastructure | **None** | HTTP/2 + Caddy | zero-cache service |
@@ -137,19 +137,19 @@ That's it. Open two tabs. Add a todo in one. See it in the other.
 
 ## Packages
 
-One install — `pnpm add better-sync`. Everything via subpath imports:
+One install — `pnpm add bettersync`. Everything via subpath imports:
 
 | Import | What |
 |---|---|
-| `better-sync` | Core + betterSync() + createSyncServer + createSyncClient |
-| `better-sync/client` | Client engine |
-| `better-sync/server` | Handler + hooks |
-| `better-sync/next-js` | toNextJsHandler |
-| `better-sync/react` | SyncProvider, useSync, useSyncQuery, SyncDevtools |
-| `better-sync/adapters/drizzle` | Drizzle + Postgres |
-| `better-sync/adapters/pglite` | PGlite (Postgres WASM) |
-| `better-sync/adapters/memory` | In-memory (tests) |
-| `better-sync/test` | Conformance suite |
+| `bettersync` | Core + betterSync() + createSyncServer + createSyncClient |
+| `bettersync/client` | Client engine |
+| `bettersync/server` | Handler + hooks |
+| `bettersync/next-js` | toNextJsHandler |
+| `bettersync/react` | SyncProvider, useSync, useSyncQuery, SyncDevtools |
+| `bettersync/adapters/drizzle` | Drizzle + Postgres |
+| `bettersync/adapters/pglite` | PGlite (Postgres WASM) |
+| `bettersync/adapters/memory` | In-memory (tests) |
+| `bettersync/test` | Conformance suite |
 
 ## How It Works
 
@@ -184,7 +184,7 @@ Alpha. API may change before v1.0.
 - [x] Next.js: toNextJsHandler
 - [x] Single meta-package with 9 subpath exports
 - [x] Example Next.js app with two-tab sync demo
-- [ ] CLI: `npx better-sync init` / `generate` / `migrate`
+- [ ] CLI: `npx bettersync init` / `generate` / `migrate`
 - [ ] Kysely, Prisma, better-sqlite3 adapters
 - [ ] recover() for stale clients
 - [ ] watch() reactive queries

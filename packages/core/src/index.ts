@@ -4,7 +4,7 @@
  * Core types, HLC, schema DSL, error types, and adapter interface.
  *
  * This package is published separately so that plugin authors can depend on
- * `@bettersync/core` instead of the meta `better-sync` package, avoiding
+ * `@bettersync/core` instead of the meta `bettersync` package, avoiding
  * circular dependencies and version skew via duplicate transitive deps.
  *
  * For instance checks across duplicate copies, use `isSyncError` (structural)

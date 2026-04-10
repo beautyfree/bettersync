@@ -1,7 +1,7 @@
 {
   "name": "@bettersync/drizzle-adapter",
   "version": "0.0.1",
-  "description": "Drizzle ORM adapter for better-sync (Postgres-specific in v0.1)",
+  "description": "Drizzle ORM adapter for bettersync (Postgres-specific in v0.1)",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",

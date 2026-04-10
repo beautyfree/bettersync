@@ -1,13 +1,13 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'better-sync',
+  title: 'bettersync',
   description: 'Tiny local-first sync for TypeScript',
   themeConfig: {
     nav: [
       { text: 'Docs', link: '/docs/' },
       { text: 'GitHub', link: 'https://github.com/beautyfree/bettersync' },
-      { text: 'npm', link: 'https://www.npmjs.com/package/better-sync' },
+      { text: 'npm', link: 'https://www.npmjs.com/package/bettersync' },
     ],
     sidebar: [
       {

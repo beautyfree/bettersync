@@ -1,7 +1,7 @@
 import { All, Controller, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
 import { SyncService } from './sync.service'
-import { toNodeHandler } from 'better-sync/node'
+import { toNodeHandler } from 'bettersync/node'
 
 /**
  * SyncController — mounts the sync handler at POST /api/sync.

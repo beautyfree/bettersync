@@ -8,7 +8,7 @@ description: SyncProvider, useSync, useSyncQuery, SyncDevtools.
 ## Setup
 
 ```tsx
-import { SyncProvider, SyncDevtools } from 'better-sync/react'
+import { SyncProvider, SyncDevtools } from 'bettersync/react'
 import { syncClient } from '@/lib/sync-client'
 
 function App({ children }) {
