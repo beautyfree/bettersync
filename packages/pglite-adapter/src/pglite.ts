@@ -72,8 +72,15 @@ export function pgliteAdapter(pg: PGliteLike, opts: PGliteAdapterOptions = {}): 
     return getPrimaryKey(model, s()[model]!)
   }
 
+  /** Does the model declare the HLC column? (Internal tables like
+   *  `_sync_pending` / `_sync_meta` don't — they live outside HLC.) */
+  function hasHlc(model: string): boolean {
+    return hlcField in s()[model]!.fields
+  }
+
   function allCols(model: string): string[] {
-    return [...new Set([...Object.keys(s()[model]!.fields), hlcField])]
+    const fields = Object.keys(s()[model]!.fields)
+    return hasHlc(model) ? [...new Set([...fields, hlcField])] : fields
   }
 
   function whereClause(where: Where | undefined, startIdx = 1): { sql: string; params: unknown[] } {
@@ -112,7 +119,11 @@ export function pgliteAdapter(pg: PGliteLike, opts: PGliteAdapterOptions = {}): 
             return `"${name}" ${typ}${notNull}`
           })
           await conn.exec(`CREATE TABLE IF NOT EXISTS "${table}" (${colDefs.join(', ')})`)
-          await conn.exec(`CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`)
+          if (hasHlc(modelKey)) {
+            await conn.exec(
+              `CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`,
+            )
+          }
         }
         await conn.exec(`
           CREATE TABLE IF NOT EXISTS "${TOMBSTONE_TABLE}" (

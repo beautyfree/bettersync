@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/pglite-adapter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "PGlite (Postgres WASM) adapter for bettersync — same SQL dialect as server, runs in browser/Node",
   "license": "Apache-2.0",
   "type": "module",

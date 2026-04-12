@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/pg-adapter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "node-postgres (pg) adapter for bettersync",
   "license": "Apache-2.0",
   "type": "module",
