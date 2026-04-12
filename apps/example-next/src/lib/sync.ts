@@ -7,12 +7,8 @@
 import { betterSync } from 'bettersync'
 import { memoryAdapter } from 'bettersync/adapters/memory'
 
-// Singleton — survives hot reload in dev
-const g = globalThis as unknown as { _sync?: ReturnType<typeof betterSync> }
-
-export const sync =
-  g._sync ??
-  betterSync({
+function createSync() {
+  return betterSync({
     database: (() => {
       const db = memoryAdapter()
       db.ensureSyncTables({
@@ -43,6 +39,12 @@ export const sync =
       },
     },
   })
+}
+
+// Singleton — survives hot reload in dev
+const g = globalThis as unknown as { _sync?: ReturnType<typeof createSync> }
+
+export const sync: ReturnType<typeof createSync> = g._sync ?? createSync()
 
 // biome-ignore lint/suspicious/noExplicitAny: dev singleton cache
 if (process.env.NODE_ENV !== 'production') (g as any)._sync = sync
