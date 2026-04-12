@@ -57,19 +57,20 @@ export default function HomePage() {
       {/* ─── Code example ────────────────────────────────────── */}
       <section className="space-y-6">
         <h2 className="text-center text-2xl font-semibold md:text-3xl">3 files. That&apos;s it.</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="overflow-hidden rounded-xl border">
-            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">lib/sync.ts</p>
-            <CodeBlock lang="ts" code={codeSync} />
-          </div>
-          <div className="overflow-hidden rounded-xl border">
-            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">app/api/sync/route.ts</p>
-            <CodeBlock lang="ts" code={codeRoute} />
-          </div>
-          <div className="overflow-hidden rounded-xl border">
-            <p className="px-4 pt-3 text-xs font-medium text-fd-muted-foreground">lib/sync-client.ts</p>
-            <CodeBlock lang="ts" code={codeClient} />
-          </div>
+        <div className="grid gap-4 md:grid-cols-3 md:items-stretch">
+          {codeFiles.map((f) => (
+            <div
+              key={f.name}
+              className="flex flex-col overflow-hidden rounded-xl border bg-fd-card"
+            >
+              <div className="border-b bg-fd-muted/40 px-4 py-2 font-mono text-xs text-fd-muted-foreground">
+                {f.name}
+              </div>
+              <div className="flex-1 [&>figure]:m-0 [&>figure]:h-full [&>figure]:rounded-none [&>figure]:border-0">
+                <CodeBlock lang="ts" code={f.code} />
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -217,6 +218,12 @@ export const syncClient = createSyncClient({
   schema: syncSchema,
   syncUrl: '/api/sync',
 })`;
+
+const codeFiles = [
+  { name: 'lib/sync.ts', code: codeSync },
+  { name: 'app/api/sync/route.ts', code: codeRoute },
+  { name: 'lib/sync-client.ts', code: codeClient },
+];
 
 const subpaths = [
   { path: 'bettersync', desc: 'Core + betterSync() + server + client' },
