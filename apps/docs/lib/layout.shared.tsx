@@ -7,6 +7,14 @@ export function baseOptions(): BaseLayoutProps {
       // JSX supported
       title: appName,
     },
+    links: [
+      {
+        type: 'main',
+        text: 'llms.txt',
+        url: '/llms.txt',
+        external: true,
+      },
+    ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
 }
