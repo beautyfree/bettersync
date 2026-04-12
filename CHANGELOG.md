@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Monorepo bootstrap (pnpm + turbo + biome + vitest)
-- `@better-sync/core` package skeleton
+- `@bettersync/core` package skeleton
 - HLC (Hybrid Logical Clock) implementation, 24 hex chars, deterministic
 - Structural type guard `isSyncError` for cross-instance error checks
 - Sync wire protocol types (SyncRequest, SyncResponse, Tombstone with denormalized scope)
