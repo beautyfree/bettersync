@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/client",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Local-first sync client for bettersync",
   "license": "Apache-2.0",
   "type": "module",

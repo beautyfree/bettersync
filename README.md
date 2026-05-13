@@ -145,9 +145,16 @@ One install — `pnpm add bettersync`. Everything via subpath imports:
 | `bettersync/client` | Client engine |
 | `bettersync/server` | Handler + hooks |
 | `bettersync/next-js` | toNextJsHandler |
+| `bettersync/hono` | toHonoHandler (Node, Bun, Workers, Deno) |
+| `bettersync/node` | toNodeHandler (Express/Fastify/Nest) |
 | `bettersync/react` | SyncProvider, useSync, useSyncQuery, SyncDevtools |
 | `bettersync/adapters/drizzle` | Drizzle + Postgres |
-| `bettersync/adapters/pglite` | PGlite (Postgres WASM) |
+| `bettersync/adapters/pg` | node-postgres |
+| `bettersync/adapters/pglite` | PGlite (Postgres WASM, web) |
+| `bettersync/adapters/kysely` | Kysely |
+| `bettersync/adapters/prisma` | Prisma |
+| `bettersync/adapters/better-sqlite3` | SQLite (Node / Electron) |
+| `bettersync/adapters/expo-sqlite` | SQLite (React Native / Expo) — offline-first on mobile |
 | `bettersync/adapters/memory` | In-memory (tests) |
 | `bettersync/test` | Conformance suite |
 
@@ -182,13 +189,16 @@ Alpha. API may change before v1.0.
 - [x] Memory adapter + shared conformance suite (19 tests)
 - [x] React: SyncProvider, useSync, useSyncQuery, SyncDevtools
 - [x] Next.js: toNextJsHandler
-- [x] Single meta-package with 9 subpath exports
+- [x] Hono: toHonoHandler (Node / Bun / Workers / Deno)
+- [x] Node: toNodeHandler (Express / Fastify / Nest)
+- [x] Kysely, Prisma, better-sqlite3 adapters
+- [x] expo-sqlite adapter — offline-first React Native / Expo
+- [x] Single meta-package with subpath exports
 - [x] Example Next.js app with two-tab sync demo
 - [ ] CLI: `npx bettersync init` / `generate` / `migrate`
-- [ ] Kysely, Prisma, better-sqlite3 adapters
 - [ ] recover() for stale clients
 - [ ] watch() reactive queries
-- [ ] Hono, Express, Elysia, Fastify handlers
+- [ ] Express, Elysia, Fastify dedicated handlers
 
 ## License
 

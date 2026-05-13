@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/drizzle-adapter",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Drizzle ORM adapter for bettersync (Postgres-specific in v0.1)",
   "license": "Apache-2.0",
   "type": "module",
@@ -15,7 +15,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

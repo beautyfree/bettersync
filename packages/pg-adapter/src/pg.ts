@@ -92,6 +92,61 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
     return hasHlc(model) ? [...new Set([...fields, hlcField])] : fields
   }
 
+  /**
+   * node-postgres serializes a raw JS array as a Postgres array literal
+   * (`{a,b}`), which a JSONB column rejects. For fields typed `json` we
+   * JSON.stringify objects/arrays ourselves so the driver sends a string
+   * that JSONB can parse.
+   */
+  function serializeValue(model: string, col: string, v: unknown): unknown {
+    if (v === null || v === undefined) return v
+    const def = s()[model]?.fields[col]
+    if (def?.type !== 'json') return v
+    if (typeof v === 'string') return v
+    return JSON.stringify(v)
+  }
+
+  /**
+   * node-postgres returns NUMERIC as a string to preserve precision. For
+   * `number`-typed schema fields that's surprising (the client gets `"157"`
+   * instead of `157` and `a + b` becomes string concat). Similarly JSONB
+   * sometimes round-trips as a pre-parsed object and sometimes as a string —
+   * depends on the driver build. Normalize both here so callers always get the
+   * declared schema type.
+   */
+  function deserializeRow<T extends Record<string, unknown>>(
+    model: string,
+    row: T,
+  ): T {
+    const def = s()[model]
+    if (!def) return row
+    const out = { ...row } as Record<string, unknown>
+    for (const [col, field] of Object.entries(def.fields)) {
+      const v = out[col]
+      if (v === null || v === undefined) continue
+      if (field.type === 'number' && typeof v === 'string') {
+        const n = Number(v)
+        if (!Number.isNaN(n)) out[col] = n
+      } else if (field.type === 'json' && typeof v === 'string') {
+        try {
+          out[col] = JSON.parse(v)
+        } catch {
+          /* leave as-is if unparseable */
+        }
+      } else if (field.type === 'boolean' && typeof v !== 'boolean') {
+        out[col] = v === true || v === 'true' || v === 1 || v === '1' || v === 't'
+      }
+    }
+    return out as T
+  }
+
+  function deserializeRows<T extends Record<string, unknown>>(
+    model: string,
+    rows: T[],
+  ): T[] {
+    return rows.map((r) => deserializeRow(model, r))
+  }
+
   function whereClause(where: Where | undefined, startIdx = 1): { sql: string; params: unknown[] } {
     if (!where || Object.keys(where).length === 0) return { sql: 'TRUE', params: [] }
     const parts: string[] = []
@@ -154,7 +209,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         const cols = allCols(model)
         const colStr = cols.map((c) => `"${c}"`).join(', ')
         const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
-        const values = cols.map((c) => data[c] ?? null)
+        const values = cols.map((c) => serializeValue(model, c, data[c] ?? null))
         const rows = await q(`INSERT INTO "${table}" (${colStr}) VALUES (${placeholders}) RETURNING *`, values)
         return rows[0] ?? data
       },
@@ -168,7 +223,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         let idx = 1
         for (const [k, v] of entries) {
           sets.push(`"${k}" = $${idx++}`)
-          params.push(v)
+          params.push(serializeValue(model, k, v))
         }
         const w = whereClause(where, idx)
         params.push(...w.params)
@@ -186,7 +241,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         const table = tbl(model)
         const w = whereClause(where)
         const rows = await q(`SELECT * FROM "${table}" WHERE ${w.sql} LIMIT 1`, w.params)
-        return rows[0] ?? null
+        return rows[0] ? deserializeRow(model, rows[0]) : null
       },
 
       async findMany({ model, where, limit: lim, offset: off, sortBy }) {
@@ -201,7 +256,8 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         }
         if (lim != null) sql += ` LIMIT ${lim}`
         if (off != null && off > 0) sql += ` OFFSET ${off}`
-        return q(sql, w.params)
+        const rows = await q(sql, w.params)
+        return deserializeRows(model, rows)
       },
 
       async count({ model, where }) {
@@ -247,7 +303,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
 
         const hasMore = rows.length > lim
         const page = hasMore ? rows.slice(0, lim) : rows
-        const result: FindChangedSinceResult = { rows: page }
+        const result: FindChangedSinceResult = { rows: deserializeRows(model, page) }
         if (hasMore && page.length > 0) {
           const last = page[page.length - 1]!
           result.nextCursor = { hlc: String(last[hlcField]), id: String(last[pkName]) }
@@ -276,7 +332,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         const cols = allCols(model)
         const colStr = cols.map((c) => `"${c}"`).join(', ')
         const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
-        const values = cols.map((c) => row[c] ?? null)
+        const values = cols.map((c) => serializeValue(model, c, row[c] ?? null))
         const updateSet = cols
           .filter((c) => c !== pkName)
           .map((c) => `"${c}" = EXCLUDED."${c}"`)

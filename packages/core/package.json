@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Core types, HLC, schema DSL, and adapter interface for bettersync",
   "license": "Apache-2.0",
   "type": "module",

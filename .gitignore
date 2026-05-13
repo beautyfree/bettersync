@@ -39,3 +39,4 @@ coverage/
 # Vitest
 .vitest-cache/
 .gstack/
+dist-tarballs/

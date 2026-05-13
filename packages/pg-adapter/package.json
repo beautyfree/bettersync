@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/pg-adapter",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "node-postgres (pg) adapter for bettersync",
   "license": "Apache-2.0",
   "type": "module",
@@ -15,7 +15,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -38,5 +40,7 @@
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

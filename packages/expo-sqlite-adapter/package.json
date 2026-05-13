@@ -1,7 +1,7 @@
 {
-  "name": "@bettersync/server",
-  "version": "0.0.3",
-  "description": "Framework-agnostic sync request handler for bettersync",
+  "name": "@bettersync/expo-sqlite-adapter",
+  "version": "0.0.1",
+  "description": "expo-sqlite adapter for bettersync (offline-first SQLite for React Native / Expo)",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -15,11 +15,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -30,13 +26,21 @@
   "dependencies": {
     "@bettersync/core": "workspace:*"
   },
+  "peerDependencies": {
+    "expo-sqlite": ">=14.0.0"
+  },
+  "peerDependenciesMeta": {
+    "expo-sqlite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@bettersync/memory-adapter": "workspace:*",
+    "@bettersync/test-utils": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.6.0",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   },
-  "publishConfig": {
-    "access": "public"
-  }
+  "publishConfig": { "access": "public" }
 }

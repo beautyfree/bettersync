@@ -1,6 +1,6 @@
 {
   "name": "bettersync",
-  "version": "0.0.1",
+  "version": "0.0.8",
   "description": "Tiny local-first sync between Postgres and anything. Bidirectional. TypeScript-first. Drop-in to your existing Next.js + Drizzle/Prisma stack.",
   "license": "Apache-2.0",
   "type": "module",
@@ -65,11 +65,23 @@
       "require": "./dist/adapters/better-sqlite3.cjs",
       "default": "./dist/adapters/better-sqlite3.js"
     },
+    "./adapters/expo-sqlite": {
+      "types": "./dist/adapters/expo-sqlite.d.ts",
+      "import": "./dist/adapters/expo-sqlite.js",
+      "require": "./dist/adapters/expo-sqlite.cjs",
+      "default": "./dist/adapters/expo-sqlite.js"
+    },
     "./next-js": {
       "types": "./dist/next-js.d.ts",
       "import": "./dist/next-js.js",
       "require": "./dist/next-js.cjs",
       "default": "./dist/next-js.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "import": "./dist/hono.js",
+      "require": "./dist/hono.cjs",
+      "default": "./dist/hono.js"
     },
     "./node": {
       "types": "./dist/node.d.ts",
@@ -116,11 +128,13 @@
     "@bettersync/kysely-adapter": "workspace:*",
     "@bettersync/prisma-adapter": "workspace:*",
     "@bettersync/better-sqlite3-adapter": "workspace:*",
+    "@bettersync/expo-sqlite-adapter": "workspace:*",
     "@bettersync/test-utils": "workspace:*"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.2.0",
     "better-sqlite3": ">=11.0.0",
+    "expo-sqlite": ">=14.0.0",
     "@prisma/client": ">=5.0.0",
     "drizzle-orm": ">=0.30.0",
     "kysely": ">=0.26.0",
@@ -142,6 +156,9 @@
       "optional": true
     },
     "better-sqlite3": {
+      "optional": true
+    },
+    "expo-sqlite": {
       "optional": true
     },
     "@prisma/client": {
