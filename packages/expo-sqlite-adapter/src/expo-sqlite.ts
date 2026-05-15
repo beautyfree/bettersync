@@ -102,7 +102,13 @@ export function expoSqliteAdapter(
   }
 
   function allCols(model: string): string[] {
-    return [...new Set([...Object.keys(s()[model]!.fields), hlcField])]
+    const fields = Object.keys(s()[model]!.fields)
+    // Internal bettersync tables (_sync_meta, _sync_pending) don't have
+    // a changed/HLC field — never inject hlcField for them, otherwise
+    // CREATE TABLE _sync_meta (key, value, changed NOT NULL) breaks
+    // every setMeta() call with a NOT NULL constraint failure.
+    if (model.startsWith('_sync_')) return fields
+    return [...new Set([...fields, hlcField])]
   }
 
   function whereClause(where: Where | undefined): { sql: string; params: unknown[] } {

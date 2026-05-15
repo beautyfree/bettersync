@@ -82,7 +82,11 @@ export function betterSqlite3Adapter(
   }
 
   function allCols(model: string): string[] {
-    return [...new Set([...Object.keys(s()[model]!.fields), hlcField])]
+    const fields = Object.keys(s()[model]!.fields)
+    // Internal bettersync tables (_sync_meta, _sync_pending) don't have
+    // a changed/HLC field — never inject hlcField for them.
+    if (model.startsWith('_sync_')) return fields
+    return [...new Set([...fields, hlcField])]
   }
 
   function whereClause(where: Where | undefined): { sql: string; params: unknown[] } {

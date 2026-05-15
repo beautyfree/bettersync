@@ -220,7 +220,7 @@ describe('syncNow round-trip', () => {
 })
 
 describe('client errors', () => {
-  it('throws when used before start()', async () => {
+  it('lazy-inits on first use — no explicit start() needed', async () => {
     const { transport } = mockTransport(() =>
       emptyResponse('000001000000000000000000'),
     )
@@ -230,7 +230,12 @@ describe('client errors', () => {
       transport,
       clock: { nodeId: 1, now: () => 1000 },
     })
-    expect(() => client.model('project')).toThrow(/start/)
+    // model() is sync and just returns the accessor — no throw.
+    const accessor = client.model('project')
+    expect(typeof accessor.findMany).toBe('function')
+    // First async call drives ensureSyncTables internally.
+    const rows = await accessor.findMany()
+    expect(Array.isArray(rows)).toBe(true)
   })
 
   it('throws when updating a missing row', async () => {

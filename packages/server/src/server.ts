@@ -483,11 +483,17 @@ async function buildServerResponse<Ctx>({
 
   // Determine which models to read.
   const forceFetchSet = new Set(request.forceFetch ?? [])
-  // If a cursor is present, resume from its model only. Other models are
-  // served on the next request after the current one finishes paginating.
+  // If a cursor is present, resume from its model AND continue with
+  // every model after it in the schema's declared order. Without the
+  // suffix, once the cursor's model finishes paginating the server
+  // would never serve subsequent models — every row of those models
+  // would be silently lost from the client's perspective because
+  // `hasMore` flips to false and `last_sync_hlc` jumps past their
+  // HLCs on the next round trip.
+  const allModels = Object.keys(schema)
   const modelOrder = request.cursor
-    ? [request.cursor.model]
-    : Object.keys(schema)
+    ? allModels.slice(allModels.indexOf(request.cursor.model))
+    : allModels
 
   const emptyResponse = emptySyncResponse('')
   if (modelOrder.length === 0) {

@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/expo-sqlite-adapter",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "expo-sqlite adapter for bettersync (offline-first SQLite for React Native / Expo)",
   "license": "Apache-2.0",
   "type": "module",

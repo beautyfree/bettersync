@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/better-sqlite3-adapter",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "better-sqlite3 adapter for bettersync (SQLite for Node.js/Electron)",
   "license": "Apache-2.0",
   "type": "module",

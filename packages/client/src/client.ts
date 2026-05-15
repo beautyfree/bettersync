@@ -152,6 +152,7 @@ export function createSyncClient<Ctx>(
   const maxPollInterval = options.maxPollInterval ?? 120_000
 
   let started = false
+  let startPromise: Promise<void> | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let currentPollInterval = pollInterval
   let syncing = false
@@ -299,10 +300,29 @@ export function createSyncClient<Ctx>(
 
   // ─── Main logic ─────────────────────────────────────────────────
 
-  function ensureStarted(): void {
-    if (!started) {
-      throw new Error('SyncClient: call start() before using any method')
+  /**
+   * Initialize on first use. Safe to call concurrently — only the first
+   * invocation runs ensureSyncTables / restores HLC / starts polling;
+   * later callers just await the same promise.
+   */
+  async function initIfNeeded(): Promise<void> {
+    if (started) return
+    if (!startPromise) {
+      startPromise = (async () => {
+        await options.database.ensureSyncTables(extendedSchema)
+        const savedHlc = await getMeta('hlc_state')
+        if (savedHlc) {
+          try {
+            clock.setState(savedHlc)
+          } catch {
+            // corrupted, start fresh
+          }
+        }
+        started = true
+        scheduleNextPoll()
+      })()
     }
+    await startPromise
   }
 
   function getModelDef(modelKey: string) {
@@ -340,21 +360,7 @@ export function createSyncClient<Ctx>(
     options,
 
     async start() {
-      if (started) return
-      await options.database.ensureSyncTables(extendedSchema)
-
-      // Restore HLC state from meta
-      const savedHlc = await getMeta('hlc_state')
-      if (savedHlc) {
-        try {
-          clock.setState(savedHlc)
-        } catch {
-          // corrupted, start fresh
-        }
-      }
-
-      started = true
-      scheduleNextPoll()
+      await initIfNeeded()
     },
 
     stop() {
@@ -365,7 +371,7 @@ export function createSyncClient<Ctx>(
     },
 
     async syncNow() {
-      ensureStarted()
+      await initIfNeeded()
       if (syncing) {
         return { pushed: 0, pulled: 0, tombstonesApplied: 0, hasMore: false, staleClient: false }
       }
@@ -378,7 +384,7 @@ export function createSyncClient<Ctx>(
     },
 
     async recover() {
-      ensureStarted()
+      await initIfNeeded()
       syncing = true
       try {
         // Step 1: push any remaining pending writes (server still accepts them)
@@ -411,13 +417,12 @@ export function createSyncClient<Ctx>(
     },
 
     model(modelKey) {
-      ensureStarted()
       const modelDef = getModelDef(modelKey)
       const pkField = getPrimaryKey(modelKey, modelDef)
 
       const accessor: ModelAccessor = {
         async insert(data) {
-          ensureStarted()
+          await initIfNeeded()
           const hlc = clock.tick()
           const row: Row = { ...data, [hlcField]: hlc }
           const result = await options.database.upsertIfNewer({
@@ -436,7 +441,7 @@ export function createSyncClient<Ctx>(
         },
 
         async update(id, patch) {
-          ensureStarted()
+          await initIfNeeded()
           const existing = await options.database.findOne({
             model: modelKey,
             where: { [pkField]: id },
@@ -454,7 +459,7 @@ export function createSyncClient<Ctx>(
         },
 
         async delete(id) {
-          ensureStarted()
+          await initIfNeeded()
           const existing = await options.database.findOne({
             model: modelKey,
             where: { [pkField]: id },
@@ -472,13 +477,13 @@ export function createSyncClient<Ctx>(
           emitChange(modelKey, [id])
         },
 
-        findOne(where) {
-          ensureStarted()
+        async findOne(where) {
+          await initIfNeeded()
           return options.database.findOne({ model: modelKey, where })
         },
 
-        findMany(where) {
-          ensureStarted()
+        async findMany(where) {
+          await initIfNeeded()
           return options.database.findMany({
             model: modelKey,
             ...(where ? { where } : {}),
@@ -493,6 +498,11 @@ export function createSyncClient<Ctx>(
 
   async function doSync(): Promise<SyncResult> {
     const lastSyncHlc = (await getMeta('last_sync_hlc')) ?? HLC_ZERO
+    const pendingCursorRaw = await getMeta('pending_cursor')
+    const pendingCursor =
+      pendingCursorRaw && pendingCursorRaw.length > 0
+        ? (JSON.parse(pendingCursorRaw) as { model: string; hlc: string; id: string })
+        : null
     const pendingRows = await drainPending()
 
     const changes: ChangeSet = {}
@@ -515,6 +525,7 @@ export function createSyncClient<Ctx>(
       clientTime: clock.tick(),
       since: lastSyncHlc,
       limit,
+      ...(pendingCursor ? { cursor: pendingCursor } : {}),
       ...(Object.keys(changes).length > 0 ? { changes } : {}),
       ...(tombstones.length > 0 ? { tombstones } : {}),
     }
@@ -553,8 +564,18 @@ export function createSyncClient<Ctx>(
     // Clear acknowledged pending ops
     await clearPending(pendingRows.map((p) => p.id))
 
-    // Persist sync state
-    await setMeta('last_sync_hlc', response.serverTime)
+    // Persist sync state. While the server still has more pages
+    // (hasMore + cursor), keep `last_sync_hlc` pointing at the prior
+    // checkpoint and stash the continuation cursor so the next
+    // syncNow picks up from the same model offset. Only once the
+    // server reports a fully drained pull do we advance
+    // `last_sync_hlc` to the new serverTime.
+    if (response.hasMore && response.cursor) {
+      await setMeta('pending_cursor', JSON.stringify(response.cursor))
+    } else {
+      await setMeta('pending_cursor', '')
+      await setMeta('last_sync_hlc', response.serverTime)
+    }
     await setMeta('hlc_state', clock.current())
 
     // Emit events

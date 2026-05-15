@@ -45,8 +45,19 @@ export interface SyncProviderProps {
 /**
  * Provides the SyncClient to all child components via React context.
  * Must wrap any component that uses `useSync` or `useSyncQuery`.
+ *
+ * Calls `client.start()` on mount and `client.stop()` on unmount, so
+ * callers don't have to manage the polling loop themselves. Internal
+ * methods (`model()`, `syncNow()`, etc.) await initialization
+ * automatically, so descendants may render immediately.
  */
 export function SyncProvider({ client, children }: SyncProviderProps) {
+  useEffect(() => {
+    void client.start()
+    return () => {
+      client.stop()
+    }
+  }, [client])
   return <SyncContext.Provider value={client}>{children}</SyncContext.Provider>
 }
 
