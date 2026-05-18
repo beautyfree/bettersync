@@ -18,5 +18,6 @@ export type {
   AfterWriteInTransactionArgs,
   AfterCommitArgs,
   BeforeReadArgs,
+  BeforeWriteArgs,
 } from './server'
 export { runHookWithTimeout } from './hooks'

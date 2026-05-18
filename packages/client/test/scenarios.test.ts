@@ -338,6 +338,155 @@ describe('update-vs-delete race', () => {
   // cross-clock HLC ordering, which is more brittle than useful.
 })
 
+describe('beforeWrite hook authz', () => {
+  /**
+   * Realistic case: only the row's `createdBy` may delete it.
+   * Implemented in `beforeWrite` so the hook sees the existing row
+   * BEFORE the delete is applied. Throwing rolls back the whole
+   * sync transaction.
+   */
+  const ownerOnlyDelete: SyncServerHooks<Ctx> = {
+    async beforeWrite({ model, action, existing, ctx }) {
+      if (model !== 'feeding') return
+      if (action !== 'delete') return
+      if (!existing) return // already gone — nothing to enforce
+      if (existing.createdBy !== ctx.userId) {
+        throw new Error('Only the creator may delete this row')
+      }
+    },
+  }
+
+  it('beforeWrite throws on unauthorized delete → row survives, sync errors', async () => {
+    // Custom schema with `createdBy` field.
+    const ownerSchema: SyncSchema<Ctx> = {
+      feeding: {
+        fields: {
+          id: { type: 'string', primaryKey: true },
+          familyId: { type: 'string' },
+          childId: { type: 'string' },
+          createdBy: { type: 'string' },
+          type: { type: 'string' },
+          timestamp: { type: 'number' },
+          duration: { type: 'number', required: false },
+          changed: { type: 'string' },
+        },
+        scope: (ctx) => ({ familyId: ctx.familyId }),
+      },
+    }
+
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(ownerSchema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema: ownerSchema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+      hooks: ownerOnlyDelete,
+    })
+
+    let aliceClock = 1_000
+    const alice = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema: ownerSchema,
+      transport: async (req) =>
+        server.handleSync(req, { userId: 'alice', familyId: 'fam1' }),
+      clock: { nodeId: 0xbbbbbbbb, now: () => aliceClock++ },
+    })
+    let bobClock = 2_000
+    const bob = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema: ownerSchema,
+      transport: async (req) =>
+        server.handleSync(req, { userId: 'bob', familyId: 'fam1' }),
+      clock: { nodeId: 0xcccccccc, now: () => bobClock++ },
+    })
+    await alice.start()
+    await bob.start()
+
+    // Alice creates a row.
+    await alice.model('feeding').insert({
+      id: 'row1',
+      familyId: 'fam1',
+      childId: 'kid',
+      createdBy: 'alice',
+      type: 'bottle',
+      timestamp: 100,
+      duration: 5,
+    })
+    await alice.syncNow()
+    await bob.syncNow()
+
+    // Bob tries to delete it.
+    await bob.model('feeding').delete('row1')
+    // Push must fail at server boundary because the hook throws.
+    await expect(bob.syncNow()).rejects.toThrow(/creator/i)
+
+    // Row must still exist on the server.
+    const serverRow = await serverDb.findOne({
+      model: 'feeding',
+      where: { id: 'row1' },
+    })
+    expect(serverRow).not.toBeNull()
+  })
+
+  it('beforeWrite allows delete when ctx.userId matches existing.createdBy', async () => {
+    const ownerSchema: SyncSchema<Ctx> = {
+      feeding: {
+        fields: {
+          id: { type: 'string', primaryKey: true },
+          familyId: { type: 'string' },
+          childId: { type: 'string' },
+          createdBy: { type: 'string' },
+          type: { type: 'string' },
+          timestamp: { type: 'number' },
+          duration: { type: 'number', required: false },
+          changed: { type: 'string' },
+        },
+        scope: (ctx) => ({ familyId: ctx.familyId }),
+      },
+    }
+
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(ownerSchema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema: ownerSchema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+      hooks: ownerOnlyDelete,
+    })
+
+    let aliceClock = 1_000
+    const alice = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema: ownerSchema,
+      transport: async (req) =>
+        server.handleSync(req, { userId: 'alice', familyId: 'fam1' }),
+      clock: { nodeId: 0xbbbbbbbb, now: () => aliceClock++ },
+    })
+    await alice.start()
+
+    await alice.model('feeding').insert({
+      id: 'row1',
+      familyId: 'fam1',
+      childId: 'kid',
+      createdBy: 'alice',
+      type: 'bottle',
+      timestamp: 100,
+      duration: 5,
+    })
+    await alice.syncNow()
+    await alice.model('feeding').delete('row1')
+    await alice.syncNow()
+
+    const serverRow = await serverDb.findOne({
+      model: 'feeding',
+      where: { id: 'row1' },
+    })
+    expect(serverRow).toBeNull()
+  })
+})
+
 describe('server tombstone reaches other devices', () => {
   it('B never saw A-active locally, but after A inserts B-active, B still drops A-active on pull', async () => {
     const { clientA, clientB, serverDb } = await setup(openRowUniquenessHook)

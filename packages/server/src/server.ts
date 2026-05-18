@@ -10,6 +10,7 @@
 import {
   type ChangeSet,
   decodeHlc,
+  getPrimaryKey,
   HLC_ZERO,
   HLClock,
   type HLClockOptions,
@@ -47,15 +48,43 @@ export interface AfterWriteInTransactionArgs<Ctx> extends HookChangeDescriptor {
   tx: SyncAdapter
 }
 
+/**
+ * Arguments to `beforeWrite`. Fires INSIDE the sync transaction
+ * BEFORE the row upsert (for insert/update) or tombstone application
+ * (for delete). Throwing inside the hook rolls the whole transaction
+ * back, so it's the right place for write-time authz checks like
+ * "only the creator may delete this row".
+ *
+ * For `action: 'delete'`, `existing` is the row currently in the DB
+ * (or `null` if the row was already gone). For insert / update,
+ * `existing` is the prior row state if any (null for fresh inserts).
+ * `row` is the incoming stamped row for insert/update, undefined for
+ * delete.
+ */
+export interface BeforeWriteArgs<Ctx> {
+  model: string
+  action: 'insert' | 'update' | 'delete'
+  row?: Row
+  existing: Row | null
+  tombstone?: Tombstone
+  ctx: Ctx
+  tx: SyncAdapter
+}
+
 export interface AfterCommitArgs<Ctx> {
   changes: HookChangeDescriptor[]
   ctx: Ctx
 }
 
 /**
- * Hooks are split into three phases with STRICT rules:
+ * Hooks are split into four phases with STRICT rules:
  *
  * - `beforeRead`: can extend the scope filter before reads. Pure, fast.
+ * - `beforeWrite`: fires INSIDE the sync transaction before each row
+ *   upsert / tombstone is applied. Throw to abort the whole sync.
+ *   Use for write-time authz (e.g. "only owner may delete").
+ *   Same 100ms budget as afterWriteInTransaction — do NOT make
+ *   network calls.
  * - `afterWriteInTransaction`: runs inside the sync transaction with a
  *   hard 100ms budget. Use ONLY for atomic DB writes (e.g. enqueue job
  *   row). Do NOT make network calls here.
@@ -66,6 +95,7 @@ export interface AfterCommitArgs<Ctx> {
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
 export interface SyncServerHooks<Ctx = any> {
   beforeRead?: (args: BeforeReadArgs<Ctx>) => Promise<Scope | void>
+  beforeWrite?: (args: BeforeWriteArgs<Ctx>) => Promise<void>
   afterWriteInTransaction?: (args: AfterWriteInTransactionArgs<Ctx>) => Promise<void>
   afterCommit?: (args: AfterCommitArgs<Ctx>) => Promise<void>
 }
@@ -342,6 +372,29 @@ async function applyClientChanges<Ctx>({
         const stampedHlc = serverHlc.receive(clientHlc)
         const stamped: Row = { ...sanitized, [hlcField]: stampedHlc }
 
+        if (hooks?.beforeWrite) {
+          const pkField = getPrimaryKey(model, modelDef)
+          const existing = await tx.findOne({
+            model,
+            where: { [pkField]: stamped[pkField] },
+          })
+          const beforeAction: 'insert' | 'update' = existing ? 'update' : 'insert'
+          const hook = hooks.beforeWrite
+          await runHookWithTimeout(
+            'beforeWrite',
+            () =>
+              hook({
+                model,
+                action: beforeAction,
+                row: stamped,
+                existing,
+                ctx,
+                tx,
+              }),
+            budget,
+          )
+        }
+
         const outcome = await tx.upsertIfNewer({ model, row: stamped })
         if (outcome === 'skipped') continue
 
@@ -388,6 +441,28 @@ async function applyClientChanges<Ctx>({
       const stampedTombstone: Tombstone = {
         ...tombstone,
         hlc: stampedTombstoneHlc,
+      }
+
+      if (hooks?.beforeWrite) {
+        const pkField = getPrimaryKey(stampedTombstone.model, modelDef)
+        const existing = await tx.findOne({
+          model: stampedTombstone.model,
+          where: { [pkField]: stampedTombstone.id },
+        })
+        const hook = hooks.beforeWrite
+        await runHookWithTimeout(
+          'beforeWrite',
+          () =>
+            hook({
+              model: stampedTombstone.model,
+              action: 'delete',
+              existing,
+              tombstone: stampedTombstone,
+              ctx,
+              tx,
+            }),
+          budget,
+        )
       }
 
       const applied = await tx.upsertTombstoneIfNewer(stampedTombstone)
