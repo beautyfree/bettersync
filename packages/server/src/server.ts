@@ -112,6 +112,12 @@ export interface CreateSyncServerOptions<Ctx = any> {
   /** HLC clock options (node id, custom clock function). */
   clock?: HLClockOptions
   /**
+   * Maximum page size the server will honor from `request.limit`.
+   * Default: 1000. Raise this for trusted deployments with larger
+   * initial snapshots to avoid multi-page cold-start pulls.
+   */
+  maxLimit?: number
+  /**
    * Tombstone retention in milliseconds. Clients that haven't synced within
    * this window get `staleClient: true` and must call `recover()`.
    * Default: 30 days. Set to 0 to disable stale detection.
@@ -158,6 +164,7 @@ export function createSyncServer<Ctx>(
   const hlcField = options.hlcField ?? 'changed'
   const budget = options.afterWriteInTransactionBudgetMs ?? DEFAULT_HOOK_BUDGET_MS
   const retentionMs = options.tombstoneRetentionMs ?? 30 * 24 * 60 * 60 * 1000 // 30 days
+  const maxLimit = options.maxLimit ?? 1000
   let authResolver: AuthResolver<Ctx> | null = (options as { auth?: AuthResolver<Ctx> }).auth ?? null
 
   const server: SyncServer<Ctx> = {
@@ -177,7 +184,7 @@ export function createSyncServer<Ctx>(
       // ─── Stale client detection ─────────────────────────────────
       const isStale = retentionMs > 0 && isClientStale(request.since, retentionMs)
 
-      const limit = Math.min(request.limit ?? 1000, 1000)
+      const limit = Math.min(request.limit ?? maxLimit, maxLimit)
       const appliedChanges: HookChangeDescriptor[] = []
 
       // ─── Apply client writes inside transaction ─────────────────
@@ -613,19 +620,38 @@ async function buildServerResponse<Ctx>({
   // Tombstones: only collect when we're NOT mid-pagination (cursor is null),
   // to keep the protocol simple. Tombstones are included with the final page.
   if (!hasMore) {
-    // Collect tombstones across all models we're serving.
-    // For v0.1, use the first model's scope as a heuristic; multi-tenant
-    // apps typically have the same scope shape for all models.
-    const firstModelKey = Object.keys(schema)[0]
-    const firstModelDef = firstModelKey ? schema[firstModelKey] : undefined
-    const scope = firstModelDef?.scope ? firstModelDef.scope(ctx) : undefined
+    const seen = new Set<string>()
+    for (const modelKey of modelOrder) {
+      const modelDef = schema[modelKey]
+      if (!modelDef) continue
 
-    const allTombs = await tx.findTombstonesSince({
-      sinceHlc: request.since,
-      limit: 1000,
-      ...(scope ? { scope } : {}),
+      let scope = modelDef.scope ? modelDef.scope(ctx) : undefined
+      if (hooks?.beforeRead) {
+        const extra = await hooks.beforeRead({ model: modelKey, ctx })
+        if (extra) scope = { ...scope, ...extra }
+      }
+
+      const allTombs = await tx.findTombstonesSince({
+        sinceHlc: request.since,
+        limit: 1000,
+        ...(scope ? { scope } : {}),
+      })
+      for (const tombstone of allTombs) {
+        if (tombstone.model !== modelKey) continue
+        const key = `${tombstone.model}:${tombstone.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        tombstones.push(tombstone)
+      }
+    }
+
+    tombstones.sort((a, b) => {
+      const byHlc = a.hlc.localeCompare(b.hlc)
+      if (byHlc !== 0) return byHlc
+      const byModel = a.model.localeCompare(b.model)
+      if (byModel !== 0) return byModel
+      return a.id.localeCompare(b.id)
     })
-    tombstones = allTombs.filter((t) => modelOrder.includes(t.model))
   }
 
   return { changes, tombstones, hasMore, cursor }

@@ -159,6 +159,9 @@ importers:
 
   packages/bettersync:
     dependencies:
+      '@bettersync/better-sqlite3-adapter':
+        specifier: workspace:*
+        version: link:../better-sqlite3-adapter
       '@bettersync/client':
         specifier: workspace:*
         version: link:../client
@@ -168,6 +171,12 @@ importers:
       '@bettersync/drizzle-adapter':
         specifier: workspace:*
         version: link:../drizzle-adapter
+      '@bettersync/expo-sqlite-adapter':
+        specifier: workspace:*
+        version: link:../expo-sqlite-adapter
+      '@bettersync/kysely-adapter':
+        specifier: workspace:*
+        version: link:../kysely-adapter
       '@bettersync/memory-adapter':
         specifier: workspace:*
         version: link:../memory-adapter
@@ -177,9 +186,15 @@ importers:
       '@bettersync/pglite-adapter':
         specifier: workspace:*
         version: link:../pglite-adapter
+      '@bettersync/prisma-adapter':
+        specifier: workspace:*
+        version: link:../prisma-adapter
       '@bettersync/server':
         specifier: workspace:*
         version: link:../server
+      '@bettersync/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       '@electric-sql/pglite':
         specifier: '>=0.2.0'
         version: 0.2.17
@@ -216,22 +231,6 @@ importers:
       react:
         specifier: '>=18.0.0'
         version: 19.2.5
-    optionalDependencies:
-      '@bettersync/better-sqlite3-adapter':
-        specifier: workspace:*
-        version: link:../better-sqlite3-adapter
-      '@bettersync/expo-sqlite-adapter':
-        specifier: workspace:*
-        version: link:../expo-sqlite-adapter
-      '@bettersync/kysely-adapter':
-        specifier: workspace:*
-        version: link:../kysely-adapter
-      '@bettersync/prisma-adapter':
-        specifier: workspace:*
-        version: link:../prisma-adapter
-      '@bettersync/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
     devDependencies:
       '@types/react':
         specifier: ^19.2.14
@@ -8400,7 +8399,7 @@ snapshots:
 
   '@expo/dom-webview@55.0.6(expo@55.0.23)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
     dependencies:
-      expo: 55.0.23(@babel/core@7.29.0)(@expo/dom-webview@55.0.6)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)(typescript@5.9.3)
+      expo: 55.0.23(@babel/core@7.29.0)(@expo/dom-webview@55.0.6)(react-dom@19.2.5(react@19.2.5))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)(typescript@5.9.3)
       react: 19.2.5
       react-native: 0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.5)
 

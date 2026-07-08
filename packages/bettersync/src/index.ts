@@ -105,6 +105,9 @@ export type {
   CreateSyncClientOptions,
   ModelAccessor,
   SyncClient,
+  SyncNowOptions,
   SyncResult,
+  SyncStatus,
   Transport,
+  WriteOptions,
 } from '@bettersync/client'

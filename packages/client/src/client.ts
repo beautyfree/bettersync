@@ -62,6 +62,28 @@ export interface CreateSyncClientOptions<Ctx = any> {
   pollInterval?: number
   /** Maximum polling interval after backoff. Default 120000 (2 min). */
   maxPollInterval?: number
+  /**
+   * Automatically attempt a sync after every local write when network sync
+   * is enabled. Defaults to true. Writes still resolve after the local DB
+   * commit unless caller passes `{ sync: 'remote' }`.
+   */
+  syncOnWrite?: boolean
+  /** Debounce window for syncOnWrite. Default 250ms. */
+  syncOnWriteDebounceMs?: number
+  /**
+   * Run in local-only mode: skip network sync entirely.
+   * Local writes still go to the adapter and queue in `_sync_pending`,
+   * but `syncNow`/polling is a no-op until `enableSync()` is called.
+   * Defaults to `true` if neither `transport` nor `syncUrl` is provided.
+   */
+  localOnly?: boolean
+}
+
+/** Options passed to `enableSync()` to flip a local-only client into sync mode. */
+export interface EnableSyncOptions {
+  transport?: Transport
+  syncUrl?: string
+  headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>)
 }
 
 export interface SyncResult {
@@ -71,6 +93,29 @@ export interface SyncResult {
   hasMore: boolean
   /** True if server flagged this client as stale. Call recover(). */
   staleClient: boolean
+}
+
+export interface SyncNowOptions {
+  /** Continue calling sync until server returns hasMore=false. */
+  drain?: boolean
+}
+
+export interface WriteOptions {
+  /**
+   * `local` (default): return after local durable write, then background sync.
+   * `remote`: return only after server accepted current pending queue.
+   */
+  sync?: 'local' | 'remote'
+}
+
+export interface SyncStatus {
+  isStarted: boolean
+  isSyncing: boolean
+  isLocalOnly: boolean
+  pendingCount: number
+  lastSyncedAt: number | null
+  lastError: Error | null
+  currentHlc: string
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: caller-defined ctx shape
@@ -83,8 +128,22 @@ export interface SyncClient<Ctx = any> {
   start(): Promise<void>
   /** Stop the polling loop. */
   stop(): void
-  /** Manual sync trigger. */
-  syncNow(): Promise<SyncResult>
+  /** Manual sync trigger. No-op (returns zeros) when client is in local-only mode. */
+  syncNow(options?: SyncNowOptions): Promise<SyncResult>
+  /**
+   * Switch a local-only client into sync mode. Installs the given transport
+   * (or builds one from `syncUrl`), starts the polling loop, and immediately
+   * triggers a syncNow() to drain any accumulated pending writes.
+   *
+   * Safe to call multiple times — later calls replace the transport (useful
+   * for swapping auth headers). Calling on an already-syncing client just
+   * updates transport and runs syncNow.
+   */
+  enableSync(options: EnableSyncOptions): Promise<SyncResult>
+  /** True when client is local-only (no network sync). */
+  readonly isLocalOnly: () => boolean
+  /** Current sync status snapshot for UI/devtools/debugging. */
+  status(): Promise<SyncStatus>
   /**
    * Recover from stale client state. Call when syncNow returns staleClient.
    * Pushes any remaining pending writes, wipes local synced data, and
@@ -106,9 +165,9 @@ export type SyncListener = (event: SyncEvent) => void
 export type ErrorListener = (error: Error) => void
 
 export interface ModelAccessor {
-  insert(data: Row): Promise<Row>
-  update(id: string, patch: Partial<Row>): Promise<Row>
-  delete(id: string): Promise<void>
+  insert(data: Row, options?: WriteOptions): Promise<Row>
+  update(id: string, patch: Partial<Row>, options?: WriteOptions): Promise<Row>
+  delete(id: string, options?: WriteOptions): Promise<void>
   findOne(where: Where): Promise<Row | null>
   findMany(where?: Where): Promise<Row[]>
 }
@@ -138,24 +197,30 @@ const INTERNAL_SCHEMA_META = {
 export function createSyncClient<Ctx>(
   options: CreateSyncClientOptions<Ctx>,
 ): SyncClient<Ctx> {
-  // Resolve transport: explicit function > syncUrl > error
-  const transport: Transport = options.transport ?? (
-    options.syncUrl
-      ? createHttpTransport(options.syncUrl, options.headers)
-      : (() => { throw new Error('createSyncClient: provide either `transport` or `syncUrl`') })()
-  )
+  // Resolve transport. If neither `transport` nor `syncUrl` is provided,
+  // the client starts in local-only mode (no network round-trips). Callers
+  // can later flip it on via `client.enableSync({ transport | syncUrl })`.
+  let currentTransport: Transport | null = options.transport
+    ?? (options.syncUrl ? createHttpTransport(options.syncUrl, options.headers) : null)
+  let localOnly: boolean = options.localOnly ?? currentTransport === null
 
   const clock = new HLClock(options.clock ?? {})
   const hlcField = options.hlcField ?? 'changed'
   const limit = options.limit ?? 1000
   const pollInterval = options.pollInterval ?? 30_000
   const maxPollInterval = options.maxPollInterval ?? 120_000
+  const syncOnWrite = options.syncOnWrite ?? true
+  const syncOnWriteDebounceMs = options.syncOnWriteDebounceMs ?? 250
 
   let started = false
   let startPromise: Promise<void> | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
+  let writeSyncTimer: ReturnType<typeof setTimeout> | undefined
   let currentPollInterval = pollInterval
   let syncing = false
+  let syncPromise: Promise<SyncResult> | null = null
+  let lastSyncedAt: number | null = null
+  let lastError: Error | null = null
 
   // ─── Event emitter ──────────────────────────────────────────────
   const listeners = {
@@ -273,7 +338,35 @@ export function createSyncClient<Ctx>(
 
   function scheduleNextPoll(): void {
     if (pollTimer) clearTimeout(pollTimer)
+    if (localOnly || !currentTransport) return // no network: stay quiet
     pollTimer = setTimeout(pollTick, currentPollInterval)
+    unrefTimer(pollTimer)
+  }
+
+  function scheduleWriteSync(): void {
+    if (!syncOnWrite || localOnly || !currentTransport) return
+    if (writeSyncTimer) clearTimeout(writeSyncTimer)
+    writeSyncTimer = setTimeout(() => {
+      writeSyncTimer = undefined
+      void client.syncNow({ drain: true }).catch((err: unknown) => {
+        lastError = err instanceof Error ? err : new Error(String(err))
+        emitError(lastError)
+      })
+    }, syncOnWriteDebounceMs)
+    unrefTimer(writeSyncTimer)
+  }
+
+  async function syncAfterWrite(options?: WriteOptions): Promise<void> {
+    if (options?.sync === 'remote') {
+      if (localOnly || !currentTransport) return
+      if (writeSyncTimer) {
+        clearTimeout(writeSyncTimer)
+        writeSyncTimer = undefined
+      }
+      await client.syncNow({ drain: true })
+      return
+    }
+    scheduleWriteSync()
   }
 
   async function pollTick(): Promise<void> {
@@ -293,7 +386,8 @@ export function createSyncClient<Ctx>(
       }
     } catch (err) {
       currentPollInterval = pollInterval
-      emitError(err instanceof Error ? err : new Error(String(err)))
+      lastError = err instanceof Error ? err : new Error(String(err))
+      emitError(lastError)
     }
     scheduleNextPoll()
   }
@@ -368,23 +462,77 @@ export function createSyncClient<Ctx>(
         clearTimeout(pollTimer)
         pollTimer = undefined
       }
+      if (writeSyncTimer) {
+        clearTimeout(writeSyncTimer)
+        writeSyncTimer = undefined
+      }
     },
 
-    async syncNow() {
+    async syncNow(syncOptions: SyncNowOptions = {}) {
       await initIfNeeded()
-      if (syncing) {
+      if (localOnly || !currentTransport) {
+        // local-only: writes still queue in `_sync_pending`, but no round-trip.
         return { pushed: 0, pulled: 0, tombstonesApplied: 0, hasMore: false, staleClient: false }
       }
+      if (syncing && syncPromise) {
+        const inFlight = syncPromise
+        if (!syncOptions.drain) return inFlight
+        return inFlight.then(async (result) => {
+          if (!result.hasMore) return result
+          const rest = await client.syncNow({ drain: true })
+          return mergeSyncResults(result, rest)
+        })
+      }
       syncing = true
-      try {
-        return await doSync()
-      } finally {
-        syncing = false
+      syncPromise = doSyncMaybeDrain(syncOptions)
+        .catch((err: unknown) => {
+          lastError = err instanceof Error ? err : new Error(String(err))
+          emitError(lastError)
+          throw err
+        })
+        .finally(() => {
+          syncing = false
+          syncPromise = null
+        })
+      return syncPromise
+    },
+
+    async enableSync(opts: EnableSyncOptions) {
+      const newTransport: Transport | null = opts.transport
+        ?? (opts.syncUrl ? createHttpTransport(opts.syncUrl, opts.headers) : null)
+      if (!newTransport) {
+        throw new Error('enableSync: provide either `transport` or `syncUrl`')
+      }
+      currentTransport = newTransport
+      localOnly = false
+      await initIfNeeded()
+      // Reset backoff so the next poll runs at the base interval.
+      currentPollInterval = pollInterval
+      scheduleNextPoll()
+      // Immediate round-trip to flush accumulated pending writes.
+      return client.syncNow({ drain: true })
+    },
+
+    isLocalOnly: () => localOnly,
+
+    async status() {
+      await initIfNeeded()
+      return {
+        isStarted: started,
+        isSyncing: syncing,
+        isLocalOnly: localOnly,
+        pendingCount: (await drainPending()).length,
+        lastSyncedAt,
+        lastError,
+        currentHlc: clock.current(),
       }
     },
 
     async recover() {
       await initIfNeeded()
+      if (localOnly || !currentTransport) {
+        throw new Error('recover() requires sync to be enabled; call enableSync() first')
+      }
       syncing = true
       try {
         // Step 1: push any remaining pending writes (server still accepts them)
@@ -421,7 +569,7 @@ export function createSyncClient<Ctx>(
       const pkField = getPrimaryKey(modelKey, modelDef)
 
       const accessor: ModelAccessor = {
-        async insert(data) {
+        async insert(data, writeOptions) {
           await initIfNeeded()
           const hlc = clock.tick()
           const row: Row = { ...data, [hlcField]: hlc }
@@ -437,10 +585,11 @@ export function createSyncClient<Ctx>(
           await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
           await setMeta('hlc_state', clock.current())
           emitChange(modelKey, [String(row[pkField])])
+          await syncAfterWrite(writeOptions)
           return { ...row }
         },
 
-        async update(id, patch) {
+        async update(id, patch, writeOptions) {
           await initIfNeeded()
           const existing = await options.database.findOne({
             model: modelKey,
@@ -455,10 +604,11 @@ export function createSyncClient<Ctx>(
           await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
           await setMeta('hlc_state', clock.current())
           emitChange(modelKey, [id])
+          await syncAfterWrite(writeOptions)
           return { ...row }
         },
 
-        async delete(id) {
+        async delete(id, writeOptions) {
           await initIfNeeded()
           const existing = await options.database.findOne({
             model: modelKey,
@@ -475,6 +625,7 @@ export function createSyncClient<Ctx>(
           await enqueuePending({ type: 'delete', model: modelKey, tombstone })
           await setMeta('hlc_state', clock.current())
           emitChange(modelKey, [id])
+          await syncAfterWrite(writeOptions)
         },
 
         async findOne(where) {
@@ -495,6 +646,24 @@ export function createSyncClient<Ctx>(
   }
 
   // ─── Sync round-trip ──────────────────────────────────────────
+
+  async function doSyncMaybeDrain(syncOptions: SyncNowOptions): Promise<SyncResult> {
+    const first = await doSync()
+    if (!syncOptions.drain || !first.hasMore) return first
+
+    const total: SyncResult = { ...first }
+    let guard = 0
+    while (total.hasMore) {
+      if (++guard >= 50) break
+      const next = await doSync()
+      total.pushed += next.pushed
+      total.pulled += next.pulled
+      total.tombstonesApplied += next.tombstonesApplied
+      total.hasMore = next.hasMore
+      total.staleClient = total.staleClient || next.staleClient
+    }
+    return total
+  }
 
   async function doSync(): Promise<SyncResult> {
     const lastSyncHlc = (await getMeta('last_sync_hlc')) ?? HLC_ZERO
@@ -530,7 +699,10 @@ export function createSyncClient<Ctx>(
       ...(tombstones.length > 0 ? { tombstones } : {}),
     }
 
-    const response = await transport(request)
+    if (!currentTransport) {
+      throw new Error('doSync called without a transport — this is a bug')
+    }
+    const response = await currentTransport(request)
 
     clock.receive(response.serverTime)
 
@@ -553,6 +725,12 @@ export function createSyncClient<Ctx>(
       for (const tombstone of response.tombstones) {
         const applied = await tx.upsertTombstoneIfNewer(tombstone)
         if (applied) {
+          const modelDef = getModelDef(tombstone.model)
+          const pkField = getPrimaryKey(tombstone.model, modelDef)
+          await tx.delete({
+            model: tombstone.model,
+            where: { [pkField]: tombstone.id },
+          })
           tombstonesApplied += 1
           const ids = changedModels.get(tombstone.model) ?? []
           ids.push(tombstone.id)
@@ -577,6 +755,8 @@ export function createSyncClient<Ctx>(
       await setMeta('last_sync_hlc', response.serverTime)
     }
     await setMeta('hlc_state', clock.current())
+    lastSyncedAt = Date.now()
+    lastError = null
 
     // Emit events
     for (const [model, ids] of changedModels) {
@@ -601,6 +781,21 @@ export function createSyncClient<Ctx>(
 let idCounter = 0
 function generateId(): string {
   return `_sp_${Date.now()}_${++idCounter}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function mergeSyncResults(a: SyncResult, b: SyncResult): SyncResult {
+  return {
+    pushed: a.pushed + b.pushed,
+    pulled: a.pulled + b.pulled,
+    tombstonesApplied: a.tombstonesApplied + b.tombstonesApplied,
+    hasMore: b.hasMore,
+    staleClient: a.staleClient || b.staleClient,
+  }
+}
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  const maybe = timer as unknown as { unref?: () => void }
+  maybe.unref?.()
 }
 
 /**

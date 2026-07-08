@@ -123,6 +123,50 @@ async function buildSetup(serverLimit: number) {
 }
 
 describe('cross-call pagination drain', () => {
+  it('server honors maxLimit above 1000 for large cold-start snapshots', async () => {
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(schema)
+    let now = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => now++ },
+      maxLimit: 5_000,
+    })
+
+    for (let i = 0; i < 1_200; i++) {
+      await server.handleSync(
+        {
+          protocolVersion: '1.0.0',
+          clientTime: String(100_000 + i).padStart(24, '0'),
+          since: '000000000000000000000000',
+          changes: {
+            feeding: [{
+              id: `f${i}`,
+              userId: 'alice',
+              label: `feeding-${i}`,
+              changed: String(100_000 + i).padStart(24, '0'),
+            }],
+          },
+        },
+        { userId: 'alice' },
+      )
+    }
+
+    const page = await server.handleSync(
+      {
+        protocolVersion: '1.0.0',
+        clientTime: '000000000000000000000000',
+        since: '000000000000000000000000',
+        limit: 5_000,
+      },
+      { userId: 'alice' },
+    )
+
+    expect(page.hasMore).toBe(false)
+    expect(page.changes.feeding).toHaveLength(1_200)
+  })
+
   it('client follows nextCursor across multiple syncNow calls and pulls every row past the per-page limit', async () => {
     // Per-page limit of 3 → 7 feedings + 4 weights = 11 rows total → at
     // least 3 round trips required. Without the cursor roundtrip the
@@ -144,6 +188,19 @@ describe('cross-call pagination drain', () => {
     expect(feedings.length).toBe(7)
     expect(weights.length).toBe(4)
     expect(total).toBe(11)
+  })
+
+  it('syncNow({ drain: true }) drains all server pages in one public call', async () => {
+    const { client } = await buildSetup(3)
+
+    const result = await client.syncNow({ drain: true })
+
+    expect(result.hasMore).toBe(false)
+    expect(result.pulled).toBe(11)
+    const feedings = await client.model('feeding').findMany()
+    const weights = await client.model('weight').findMany()
+    expect(feedings.length).toBe(7)
+    expect(weights.length).toBe(4)
   })
 
   it('once drained, subsequent syncNow returns hasMore=false and pulled=0', async () => {

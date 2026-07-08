@@ -50,6 +50,16 @@ function emptyResponse(serverTime: string): SyncResponse {
   }
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 250): Promise<void> {
+  const started = Date.now()
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error('waitFor timed out')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 describe('createSyncClient local-first API', () => {
   it('insert writes to local store with HLC changed field', async () => {
     const { transport } = mockTransport(() =>
@@ -134,6 +144,83 @@ describe('createSyncClient local-first API', () => {
 })
 
 describe('syncNow round-trip', () => {
+  it('write { sync: remote } resolves only after pending queue reaches the server', async () => {
+    const { transport, requests } = mockTransport(() =>
+      emptyResponse('0000000027100001a1a2a3a4'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+
+    await client.model('project').insert({
+      id: 'p1',
+      userId: 'alice',
+      title: 'remote',
+    }, { sync: 'remote' })
+
+    expect(requests.length).toBe(1)
+    expect(requests[0]?.changes?.project?.[0]?.id).toBe('p1')
+
+    await client.syncNow()
+    expect(requests[1]?.changes).toBeUndefined()
+  })
+
+  it('auto sync-on-write attempts a background push without app glue code', async () => {
+    const { transport, requests } = mockTransport(() =>
+      emptyResponse('0000000027100001a1a2a3a4'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWriteDebounceMs: 1,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+
+    await client.model('project').insert({
+      id: 'p1',
+      userId: 'alice',
+      title: 'auto',
+    })
+
+    await waitFor(() => requests.length > 0)
+    expect(requests[0]?.changes?.project?.[0]?.id).toBe('p1')
+  })
+
+  it('status exposes pending count, last sync timestamp, and last error', async () => {
+    const { transport } = mockTransport(() =>
+      emptyResponse('0000000027100001a1a2a3a4'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+
+    await client.model('project').insert({
+      id: 'p1',
+      userId: 'alice',
+      title: 'pending',
+    })
+    const before = await client.status()
+    expect(before.pendingCount).toBe(1)
+    expect(before.lastSyncedAt).toBeNull()
+
+    await client.syncNow()
+    const after = await client.status()
+    expect(after.pendingCount).toBe(0)
+    expect(after.lastSyncedAt).toBeGreaterThan(0)
+    expect(after.lastError).toBeNull()
+  })
+
   it('sends pending changes to server and clears queue', async () => {
     const { transport, requests } = mockTransport(() =>
       emptyResponse('0000000027100001a1a2a3a4'),

@@ -244,6 +244,68 @@ describe('finish flow regression — duration set to non-null removes from open 
 })
 
 describe('push + pull in the same syncNow', () => {
+  it('concurrent syncNow callers await the in-flight round-trip instead of getting a fake empty result', async () => {
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(schema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+    })
+
+    await server.handleSync(
+      {
+        protocolVersion: '1.0.0',
+        clientTime: '000000000000000000100000',
+        since: '000000000000000000000000',
+        changes: {
+          feeding: [{
+            id: 'server-row',
+            familyId: 'fam1',
+            childId: 'kid',
+            type: 'breast_left',
+            timestamp: 1000,
+            duration: 7,
+            changed: '000000000000000000100000',
+          }],
+        },
+      },
+      { userId: 'alice', familyId: 'fam1' },
+    )
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let started!: () => void
+    const startedPromise = new Promise<void>((resolve) => { started = resolve })
+    let callCount = 0
+    const transport: Transport = async (req) => {
+      callCount += 1
+      started()
+      await gate
+      return server.handleSync(req, { userId: 'alice', familyId: 'fam1' })
+    }
+
+    const client = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      clock: { nodeId: 0xbbbbbbbb, now: () => 1_000 },
+    })
+    await client.start()
+
+    const first = client.syncNow()
+    await startedPromise
+    const second = client.syncNow()
+    release()
+    const [a, b] = await Promise.all([first, second])
+
+    expect(callCount).toBe(1)
+    expect(a.pulled).toBe(1)
+    expect(b.pulled).toBe(1)
+    expect(await client.model('feeding').findOne({ id: 'server-row' })).not.toBeNull()
+  })
+
   it('local pending changes ride out while server changes come down — no loss either side', async () => {
     const { clientA, clientB } = await setup()
 
@@ -520,5 +582,189 @@ describe('server tombstone reaches other devices', () => {
     const aRows = await clientA.model('feeding').findMany()
     expect(aRows.find((r) => r.id === 'a-active')).toBeUndefined()
     expect(aRows.find((r) => r.id === 'b-active')).toBeTruthy()
+  })
+
+  it('delete tombstones use each model scope, not the first schema model scope', async () => {
+    const mixedScopeSchema: SyncSchema<Ctx> = {
+      user: {
+        fields: {
+          id: { type: 'string', primaryKey: true },
+          name: { type: 'string' },
+          changed: { type: 'string' },
+        },
+        scope: (ctx) => ({ id: ctx.userId }),
+      },
+      feeding: {
+        fields: {
+          id: { type: 'string', primaryKey: true },
+          familyId: { type: 'string' },
+          childId: { type: 'string' },
+          type: { type: 'string' },
+          timestamp: { type: 'number' },
+          duration: { type: 'number', required: false },
+          changed: { type: 'string' },
+        },
+        scope: (ctx) => ({ familyId: ctx.familyId }),
+      },
+    }
+
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(mixedScopeSchema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema: mixedScopeSchema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+    })
+
+    let aliceClock = 1_000
+    const alice = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema: mixedScopeSchema,
+      transport: (req) =>
+        server.handleSync(req, { userId: 'alice', familyId: 'fam1' }),
+      clock: { nodeId: 0xbbbbbbbb, now: () => aliceClock++ },
+    })
+    let bobClock = 2_000
+    const bob = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema: mixedScopeSchema,
+      transport: (req) =>
+        server.handleSync(req, { userId: 'bob', familyId: 'fam1' }),
+      clock: { nodeId: 0xcccccccc, now: () => bobClock++ },
+    })
+    await alice.start()
+    await bob.start()
+
+    await alice.model('feeding').insert({
+      id: 'shared-feeding',
+      familyId: 'fam1',
+      childId: 'kid',
+      type: 'bottle',
+      timestamp: 1000,
+      duration: 5,
+    })
+    await alice.syncNow()
+    await bob.syncNow()
+    expect(await bob.model('feeding').findOne({ id: 'shared-feeding' })).not.toBeNull()
+
+    await alice.model('feeding').delete('shared-feeding')
+    await alice.syncNow()
+
+    const result = await bob.syncNow()
+    expect(result.tombstonesApplied).toBeGreaterThanOrEqual(1)
+    expect(await bob.model('feeding').findOne({ id: 'shared-feeding' })).toBeNull()
+  })
+})
+
+
+describe('localOnly mode + enableSync', () => {
+  it('local writes accumulate offline, then enableSync flushes them to server', async () => {
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(schema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+    })
+    const ctx: Ctx = { userId: 'alice', familyId: 'fam1' }
+    const transport: Transport = async (req) => server.handleSync(req, ctx)
+
+    // Client starts with NO transport — local-only.
+    let clientClock = 1_000
+    const client = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+      clock: { nodeId: 0xbbbbbbbb, now: () => clientClock++ },
+    })
+    await client.start()
+    expect(client.isLocalOnly()).toBe(true)
+
+    // Three local writes, no network.
+    await client.model('feeding').insert({
+      id: 'f1', familyId: 'fam1', childId: 'kid', type: 'breast_left',
+      timestamp: 1000, duration: null,
+    })
+    await client.model('feeding').insert({
+      id: 'f2', familyId: 'fam1', childId: 'kid', type: 'bottle',
+      timestamp: 2000, duration: 600,
+    })
+    await client.model('feeding').update('f1', { duration: 300 })
+
+    // Server still empty.
+    expect(await serverDb.findMany({ model: 'feeding' })).toHaveLength(0)
+    // Local store has both rows.
+    expect(await client.model('feeding').findMany()).toHaveLength(2)
+
+    // syncNow is a no-op in local-only.
+    const noop = await client.syncNow()
+    expect(noop).toEqual({ pushed: 0, pulled: 0, tombstonesApplied: 0, hasMore: false, staleClient: false })
+
+    // Flip on — pending queue drains in one shot.
+    const result = await client.enableSync({ transport })
+    expect(client.isLocalOnly()).toBe(false)
+    expect(result.pushed).toBeGreaterThanOrEqual(3) // 2 inserts + 1 update
+
+    const serverRows = await serverDb.findMany({ model: 'feeding' })
+    expect(serverRows).toHaveLength(2)
+    expect(serverRows.find((r) => r.id === 'f1')?.duration).toBe(300)
+  })
+
+  it('enableSync throws if no transport provided', async () => {
+    const client = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+    })
+    await client.start()
+    await expect(client.enableSync({})).rejects.toThrow(/transport|syncUrl/)
+  })
+
+  it('local-only client receives pulled rows after enableSync (restore on new device)', async () => {
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(schema)
+    let serverClock = 10_000
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => serverClock++ },
+    })
+    const ctx: Ctx = { userId: 'alice', familyId: 'fam1' }
+    const transport: Transport = async (req) => server.handleSync(req, ctx)
+
+    // Pre-populate server (simulating another device's data).
+    const seedClient = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      clock: { nodeId: 0xdddddddd, now: () => 500 },
+    })
+    await seedClient.start()
+    await seedClient.model('feeding').insert({
+      id: 'cloud1', familyId: 'fam1', childId: 'kid', type: 'bottle',
+      timestamp: 100, duration: 200,
+    })
+    await seedClient.syncNow()
+
+    // New device, local-only, with a locally-created row.
+    let clientClock = 2_000
+    const newDevice = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+      clock: { nodeId: 0xeeeeeeee, now: () => clientClock++ },
+    })
+    await newDevice.start()
+    await newDevice.model('feeding').insert({
+      id: 'local1', familyId: 'fam1', childId: 'kid', type: 'breast_left',
+      timestamp: 200, duration: 300,
+    })
+
+    // Enable sync — local row goes up, cloud row comes down.
+    const result = await newDevice.enableSync({ transport })
+    expect(result.pushed).toBeGreaterThanOrEqual(1)
+    expect(result.pulled).toBeGreaterThanOrEqual(1)
+
+    const rows = await newDevice.model('feeding').findMany()
+    expect(rows.map((r) => r.id).sort()).toEqual(['cloud1', 'local1'])
   })
 })
