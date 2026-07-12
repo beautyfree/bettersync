@@ -8,7 +8,7 @@
  * acknowledgement.
  */
 
-export { createSyncClient } from './client'
+export { createEventSourceRealtime, createSyncClient } from './client'
 export type {
   ChangeEvent,
   ChangeListener,
@@ -17,6 +17,10 @@ export type {
   ErrorListener,
   ModelAccessor,
   PendingOp,
+  RealtimeHandlers,
+  RealtimeSubscribe,
+  RealtimeTransport,
+  RealtimeUnsubscribe,
   SyncClient,
   SyncEvent,
   SyncListener,

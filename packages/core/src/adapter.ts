@@ -70,6 +70,19 @@ export interface FindChangedSinceResult {
   nextCursor?: AdapterCursor
 }
 
+export interface FindTombstonesSinceParams {
+  model: string
+  sinceHlc: string
+  limit: number
+  cursor?: AdapterCursor
+  scope?: Scope
+}
+
+export interface FindTombstonesSinceResult {
+  tombstones: Tombstone[]
+  nextCursor?: AdapterCursor
+}
+
 /**
  * Outcome of an HLC-conditional upsert.
  */
@@ -146,17 +159,16 @@ export interface SyncAdapter {
    * delete time) so that cross-tenant filtering works without joining
    * the original (deleted) rows.
    */
-  findTombstonesSince(p: {
-    sinceHlc: string
-    limit: number
-    scope?: Scope
-  }): Promise<Tombstone[]>
+  findTombstonesSince(p: FindTombstonesSinceParams): Promise<FindTombstonesSinceResult>
 
   /**
    * Insert or update a tombstone if newer. Idempotent.
    * Returns true if the tombstone was written, false if skipped.
    */
   upsertTombstoneIfNewer(t: Tombstone): Promise<boolean>
+
+  /** Claim an immutable client operation. False means already committed. */
+  claimOperation(p: { model: string; opId: string }): Promise<boolean>
 
   /**
    * Garbage-collect tombstones older than the given HLC.

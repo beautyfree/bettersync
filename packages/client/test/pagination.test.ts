@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { SyncRequest, SyncSchema } from '@bettersync/core'
+import { PROTOCOL_VERSION, type SyncRequest, type SyncSchema } from '@bettersync/core'
 import { memoryAdapter } from '@bettersync/memory-adapter'
 import { createSyncServer } from '@bettersync/server'
 import { createSyncClient, type Transport } from '../src/index'
@@ -33,6 +33,7 @@ const schema: SyncSchema<Ctx> = {
       changed: { type: 'string' },
     },
     scope: (ctx) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
   // Declared AFTER feeding so a slice([cursor.model:]) skip would
   // strand every weight row.
@@ -44,6 +45,7 @@ const schema: SyncSchema<Ctx> = {
       changed: { type: 'string' },
     },
     scope: (ctx) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
 }
 
@@ -72,16 +74,19 @@ async function buildSetup(serverLimit: number) {
   for (let i = 0; i < 7; i++) {
     await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: String(clockTime + i).padStart(24, '0'),
         since: '000000000000000000000000',
         changes: {
           feeding: [
             {
-              id: `f${i}`,
-              userId: 'alice',
-              label: `feeding-${i}`,
-              changed: String(clockTime + i).padStart(24, '0'),
+              opId: `seed-feeding-${i}`,
+              row: {
+                id: `f${i}`,
+                userId: 'alice',
+                label: `feeding-${i}`,
+                changed: String(clockTime + i).padStart(24, '0'),
+              },
             },
           ],
         },
@@ -92,16 +97,19 @@ async function buildSetup(serverLimit: number) {
   for (let i = 0; i < 4; i++) {
     await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: String(clockTime + 1000 + i).padStart(24, '0'),
         since: '000000000000000000000000',
         changes: {
           weight: [
             {
-              id: `w${i}`,
-              userId: 'alice',
-              kg: String(3 + i * 0.5),
-              changed: String(clockTime + 1000 + i).padStart(24, '0'),
+              opId: `seed-weight-${i}`,
+              row: {
+                id: `w${i}`,
+                userId: 'alice',
+                kg: String(3 + i * 0.5),
+                changed: String(clockTime + 1000 + i).padStart(24, '0'),
+              },
             },
           ],
         },
@@ -137,15 +145,18 @@ describe('cross-call pagination drain', () => {
     for (let i = 0; i < 1_200; i++) {
       await server.handleSync(
         {
-          protocolVersion: '1.0.0',
+          protocolVersion: PROTOCOL_VERSION,
           clientTime: String(100_000 + i).padStart(24, '0'),
           since: '000000000000000000000000',
           changes: {
             feeding: [{
-              id: `f${i}`,
-              userId: 'alice',
-              label: `feeding-${i}`,
-              changed: String(100_000 + i).padStart(24, '0'),
+              opId: `large-seed-${i}`,
+              row: {
+                id: `f${i}`,
+                userId: 'alice',
+                label: `feeding-${i}`,
+                changed: String(100_000 + i).padStart(24, '0'),
+              },
             }],
           },
         },
@@ -155,7 +166,7 @@ describe('cross-call pagination drain', () => {
 
     const page = await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: '000000000000000000000000',
         since: '000000000000000000000000',
         limit: 5_000,
@@ -235,16 +246,19 @@ describe('cross-call pagination drain', () => {
     for (let i = 0; i < 5; i++) {
       await server.handleSync(
         {
-          protocolVersion: '1.0.0',
+          protocolVersion: PROTOCOL_VERSION,
           clientTime: String(clockTime + i).padStart(24, '0'),
           since: '000000000000000000000000',
           changes: {
             feeding: [
               {
-                id: `f${i}`,
-                userId: 'alice',
-                label: `f-${i}`,
-                changed: String(clockTime + i).padStart(24, '0'),
+                opId: `ordered-feeding-${i}`,
+                row: {
+                  id: `f${i}`,
+                  userId: 'alice',
+                  label: `f-${i}`,
+                  changed: String(clockTime + i).padStart(24, '0'),
+                },
               },
             ],
           },
@@ -254,16 +268,19 @@ describe('cross-call pagination drain', () => {
     }
     await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: String(clockTime + 500).padStart(24, '0'),
         since: '000000000000000000000000',
         changes: {
           weight: [
             {
-              id: 'w0',
-              userId: 'alice',
-              kg: '3.5',
-              changed: String(clockTime + 500).padStart(24, '0'),
+              opId: 'ordered-weight-0',
+              row: {
+                id: 'w0',
+                userId: 'alice',
+                kg: '3.5',
+                changed: String(clockTime + 500).padStart(24, '0'),
+              },
             },
           ],
         },
@@ -274,7 +291,7 @@ describe('cross-call pagination drain', () => {
     // Page 1 — feeding hits per-page limit of 3, server pauses there.
     const page1 = await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: '000000000000000000000000',
         since: '000000000000000000000000',
         limit: 3,
@@ -290,7 +307,7 @@ describe('cross-call pagination drain', () => {
     // weight (declared after feeding in schema order).
     const page2 = await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: '000000000000000000000000',
         since: '000000000000000000000000',
         limit: 3,

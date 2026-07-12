@@ -11,20 +11,24 @@
  */
 
 import {
-  type ChangeSet,
+  type ClientChangeSet,
+  type DeleteOperation,
   type FieldDef,
   getPrimaryKey,
   HLClock,
   type HLClockOptions,
   HLC_ZERO,
+  parseSyncResponse,
   PROTOCOL_VERSION,
   type Row,
   type Scope,
+  type SyncRealtimeEvent,
   type SyncAdapter,
   type SyncRequest,
   type SyncResponse,
   type SyncSchema,
   type Tombstone,
+  validateSchema,
   type Where,
 } from '@bettersync/core'
 
@@ -33,6 +37,20 @@ import {
  * For tests, use a direct transport that calls server.handleSync() in-process.
  */
 export type Transport = (request: SyncRequest) => Promise<SyncResponse>
+
+export type RealtimeUnsubscribe = () => void | Promise<void>
+
+export interface RealtimeHandlers {
+  onEvent: (event: SyncRealtimeEvent) => void
+  onError: (error: Error) => void
+}
+
+export type RealtimeSubscribe =
+  (handlers: RealtimeHandlers) => RealtimeUnsubscribe | Promise<RealtimeUnsubscribe | void> | void
+
+export interface RealtimeTransport {
+  subscribe: RealtimeSubscribe
+}
 
 /** A single pending operation stored in `_sync_pending` adapter table. */
 export interface PendingOp {
@@ -48,16 +66,29 @@ export interface CreateSyncClientOptions<Ctx = any> {
   schema: SyncSchema<Ctx>
   /** Full transport function, OR a URL string for HTTP sync. */
   transport?: Transport
+  /**
+   * Optional realtime invalidation channel. It should emit "wake up"
+   * events only; client then pulls scoped data via syncNow().
+   *
+   * Polling stays enabled as fallback.
+   */
+  realtime?: RealtimeSubscribe | RealtimeTransport
   /** Shorthand: sync endpoint URL. Creates an HTTP transport automatically. */
   syncUrl?: string
+  /** Shorthand: SSE endpoint URL. Creates a realtime transport if EventSource exists. */
+  eventsUrl?: string
   /** Headers to include with every sync HTTP request (e.g. Authorization). */
   headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>)
+  /** Abort an HTTP sync request after this many milliseconds. Default: 15 seconds. */
+  syncRequestTimeoutMs?: number
   /** Field on each row that stores the HLC. Default `'changed'`. */
   hlcField?: string
   /** HLC clock options (node id, custom clock). */
   clock?: HLClockOptions
   /** Max page size per sync request. Default 1000. */
   limit?: number
+  /** Max local operations sent per request. Default 250. */
+  maxPushBatchSize?: number
   /** Polling interval in milliseconds. Default 30000 (30s). */
   pollInterval?: number
   /** Maximum polling interval after backoff. Default 120000 (2 min). */
@@ -70,6 +101,8 @@ export interface CreateSyncClientOptions<Ctx = any> {
   syncOnWrite?: boolean
   /** Debounce window for syncOnWrite. Default 250ms. */
   syncOnWriteDebounceMs?: number
+  /** Debounce window for realtime invalidation pulls. Default 50ms. */
+  realtimeDebounceMs?: number
   /**
    * Run in local-only mode: skip network sync entirely.
    * Local writes still go to the adapter and queue in `_sync_pending`,
@@ -82,8 +115,12 @@ export interface CreateSyncClientOptions<Ctx = any> {
 /** Options passed to `enableSync()` to flip a local-only client into sync mode. */
 export interface EnableSyncOptions {
   transport?: Transport
+  realtime?: RealtimeSubscribe | RealtimeTransport
   syncUrl?: string
+  eventsUrl?: string
   headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>)
+  /** Abort an HTTP sync request after this many milliseconds. Default: 15 seconds. */
+  syncRequestTimeoutMs?: number
 }
 
 export interface SyncResult {
@@ -140,6 +177,11 @@ export interface SyncClient<Ctx = any> {
    * updates transport and runs syncNow.
    */
   enableSync(options: EnableSyncOptions): Promise<SyncResult>
+  /**
+   * Stop all network activity and keep local rows plus the persisted outbox.
+   * A later `enableSync()` resumes and drains the same pending changes.
+   */
+  disableSync(): void
   /** True when client is local-only (no network sync). */
   readonly isLocalOnly: () => boolean
   /** Current sync status snapshot for UI/devtools/debugging. */
@@ -197,25 +239,36 @@ const INTERNAL_SCHEMA_META = {
 export function createSyncClient<Ctx>(
   options: CreateSyncClientOptions<Ctx>,
 ): SyncClient<Ctx> {
+  validateSchema(options.schema)
   // Resolve transport. If neither `transport` nor `syncUrl` is provided,
   // the client starts in local-only mode (no network round-trips). Callers
   // can later flip it on via `client.enableSync({ transport | syncUrl })`.
   let currentTransport: Transport | null = options.transport
-    ?? (options.syncUrl ? createHttpTransport(options.syncUrl, options.headers) : null)
+    ?? (options.syncUrl ? createHttpTransport(options.syncUrl, options.headers, options.syncRequestTimeoutMs) : null)
+  let currentRealtime: RealtimeSubscribe | null = normalizeRealtime(
+    options.realtime ?? (options.eventsUrl ? createEventSourceRealtime(options.eventsUrl, options.headers) : undefined),
+  )
   let localOnly: boolean = options.localOnly ?? currentTransport === null
 
   const clock = new HLClock(options.clock ?? {})
   const hlcField = options.hlcField ?? 'changed'
   const limit = options.limit ?? 1000
+  const maxPushBatchSize = options.maxPushBatchSize ?? 250
+  if (!Number.isInteger(maxPushBatchSize) || maxPushBatchSize <= 0) {
+    throw new Error('SyncClient: maxPushBatchSize must be a positive integer')
+  }
   const pollInterval = options.pollInterval ?? 30_000
   const maxPollInterval = options.maxPollInterval ?? 120_000
   const syncOnWrite = options.syncOnWrite ?? true
   const syncOnWriteDebounceMs = options.syncOnWriteDebounceMs ?? 250
+  const realtimeDebounceMs = options.realtimeDebounceMs ?? 50
 
   let started = false
   let startPromise: Promise<void> | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let writeSyncTimer: ReturnType<typeof setTimeout> | undefined
+  let realtimeSyncTimer: ReturnType<typeof setTimeout> | undefined
+  let realtimeUnsubscribe: RealtimeUnsubscribe | null = null
   let currentPollInterval = pollInterval
   let syncing = false
   let syncPromise: Promise<SyncResult> | null = null
@@ -256,27 +309,27 @@ export function createSyncClient<Ctx>(
 
   // ─── Meta helpers ───────────────────────────────────────────────
 
-  async function getMeta(key: string): Promise<string | null> {
-    const row = await options.database.findOne({
+  async function getMeta(key: string, database: SyncAdapter = options.database): Promise<string | null> {
+    const row = await database.findOne({
       model: '_sync_meta',
       where: { key },
     })
     return row ? String(row.value) : null
   }
 
-  async function setMeta(key: string, value: string): Promise<void> {
-    const existing = await options.database.findOne({
+  async function setMeta(key: string, value: string, database: SyncAdapter = options.database): Promise<void> {
+    const existing = await database.findOne({
       model: '_sync_meta',
       where: { key },
     })
     if (existing) {
-      await options.database.update({
+      await database.update({
         model: '_sync_meta',
         where: { key },
         update: { value },
       })
     } else {
-      await options.database.create({
+      await database.create({
         model: '_sync_meta',
         data: { key, value },
       })
@@ -285,15 +338,15 @@ export function createSyncClient<Ctx>(
 
   // ─── Pending queue helpers ──────────────────────────────────────
 
-  async function enqueuePending(op: PendingOp): Promise<void> {
+  async function enqueuePending(database: SyncAdapter, id: string, op: PendingOp): Promise<void> {
     const payload =
       op.type === 'upsert'
         ? JSON.stringify(op.row)
         : JSON.stringify(op.tombstone)
-    await options.database.create({
+    await database.create({
       model: '_sync_pending',
       data: {
-        id: generateId(),
+        id,
         model: op.model,
         action: op.type,
         payload,
@@ -325,13 +378,85 @@ export function createSyncClient<Ctx>(
     })
   }
 
-  async function clearPending(ids: string[]): Promise<void> {
+  async function clearPending(database: SyncAdapter, ids: string[]): Promise<void> {
     for (const id of ids) {
-      await options.database.delete({
+      await database.delete({
         model: '_sync_pending',
         where: { id },
       })
     }
+  }
+
+  async function migrateLocalRows(): Promise<void> {
+    await options.database.transaction(async (tx) => {
+      for (const [modelKey, def] of Object.entries(options.schema)) {
+        const targetVersion = def.version ?? 0
+        const metaKey = `schema_version:${modelKey}`
+        const rawVersion = await getMeta(metaKey, tx)
+        const currentVersion = rawVersion === null ? 0 : Number(rawVersion)
+        if (!Number.isInteger(currentVersion) || currentVersion < 0) {
+          throw new Error(`SyncClient: invalid stored schema version for "${modelKey}"`)
+        }
+        if (currentVersion > targetVersion) {
+          throw new Error(
+            `SyncClient: local schema for "${modelKey}" is version ${currentVersion}, newer than configured ${targetVersion}`,
+          )
+        }
+        if (currentVersion === targetVersion) continue
+
+        const migrate = (row: Row): Row => {
+          let next = { ...row }
+          for (let version = currentVersion + 1; version <= targetVersion; version++) {
+            const step = def.migrations?.[version]
+            if (step) next = step(next)
+          }
+          return next
+        }
+        const pkField = getPrimaryKey(modelKey, def)
+        for (const row of await tx.findMany({ model: modelKey })) {
+          const migrated = migrate(row)
+          const patch = { ...migrated }
+          delete patch[pkField]
+          await tx.update({ model: modelKey, where: { [pkField]: row[pkField] }, update: patch })
+        }
+
+        // Pending writes are part of the same local data set. Rewriting them
+        // transactionally prevents an old payload from undoing a migration on
+        // the first post-upgrade sync.
+        for (const pending of await tx.findMany({ model: '_sync_pending' })) {
+          if (pending.model !== modelKey || pending.action !== 'upsert') continue
+          const row = JSON.parse(String(pending.payload)) as Row
+          await tx.update({
+            model: '_sync_pending',
+            where: { id: pending.id },
+            update: { payload: JSON.stringify(migrate(row)) },
+          })
+        }
+        await setMeta(metaKey, String(targetVersion), tx)
+      }
+    })
+  }
+
+  function rowForSync(modelKey: string, row: Row): Row {
+    const def = getModelDef(modelKey)
+    const result: Row = {}
+    for (const [fieldName, field] of Object.entries(def.fields as Record<string, FieldDef>)) {
+      if (field.sync === false || field.input === false) continue
+      if (fieldName in row) result[fieldName] = row[fieldName]
+    }
+    // The HLC may be implicit in older schemas but is required on the wire.
+    result[hlcField] = row[hlcField]
+    return result
+  }
+
+  function mergeRemoteRow(modelKey: string, existing: Row | null, incoming: Row): Row {
+    if (!existing) return incoming
+    const def = getModelDef(modelKey)
+    const result = { ...incoming }
+    for (const [fieldName, field] of Object.entries(def.fields as Record<string, FieldDef>)) {
+      if (field.sync === false && fieldName in existing) result[fieldName] = existing[fieldName]
+    }
+    return result
   }
 
   // ─── Polling ────────────────────────────────────────────────────
@@ -354,6 +479,47 @@ export function createSyncClient<Ctx>(
       })
     }, syncOnWriteDebounceMs)
     unrefTimer(writeSyncTimer)
+  }
+
+  function scheduleRealtimeSync(): void {
+    if (localOnly || !currentTransport) return
+    if (realtimeSyncTimer) clearTimeout(realtimeSyncTimer)
+    realtimeSyncTimer = setTimeout(() => {
+      realtimeSyncTimer = undefined
+      void client.syncNow({ drain: true }).catch((err: unknown) => {
+        lastError = err instanceof Error ? err : new Error(String(err))
+        emitError(lastError)
+      })
+    }, realtimeDebounceMs)
+    unrefTimer(realtimeSyncTimer)
+  }
+
+  async function installRealtime(): Promise<void> {
+    if (localOnly || !currentRealtime || realtimeUnsubscribe) return
+    try {
+      const unsubscribe = await currentRealtime({
+        onEvent: () => scheduleRealtimeSync(),
+        onError: (error) => {
+          lastError = error
+          emitError(error)
+        },
+      })
+      realtimeUnsubscribe = typeof unsubscribe === 'function' ? unsubscribe : null
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      emitError(lastError)
+    }
+  }
+
+  async function uninstallRealtime(): Promise<void> {
+    const unsubscribe = realtimeUnsubscribe
+    realtimeUnsubscribe = null
+    if (!unsubscribe) return
+    try {
+      await unsubscribe()
+    } catch {
+      // ignore shutdown errors
+    }
   }
 
   async function syncAfterWrite(options?: WriteOptions): Promise<void> {
@@ -404,6 +570,7 @@ export function createSyncClient<Ctx>(
     if (!startPromise) {
       startPromise = (async () => {
         await options.database.ensureSyncTables(extendedSchema)
+        await migrateLocalRows()
         const savedHlc = await getMeta('hlc_state')
         if (savedHlc) {
           try {
@@ -414,6 +581,7 @@ export function createSyncClient<Ctx>(
         }
         started = true
         scheduleNextPoll()
+        await installRealtime()
       })()
     }
     await startPromise
@@ -432,11 +600,14 @@ export function createSyncClient<Ctx>(
   function scopeFromRow(row: Row, modelKey: string): Scope {
     const scope: Record<string, unknown> = {}
     const def = getModelDef(modelKey)
-    for (const [name, field] of Object.entries(
-      def.fields as Record<string, FieldDef>,
-    )) {
-      if (field.primaryKey) continue
-      if (field.sync === false) continue
+    if (def.scope && !def.tombstoneScope) {
+      throw new Error(
+        `delete on "${modelKey}" requires model.tombstoneScope for scoped sync`,
+      )
+    }
+    for (const name of def.tombstoneScope ?? []) {
+      const field = (def.fields as Record<string, FieldDef>)[name]
+      if (!field || field.sync === false) continue
       const value = row[name]
       if (value === undefined) continue
       if (value !== null && typeof value !== 'object') {
@@ -466,6 +637,15 @@ export function createSyncClient<Ctx>(
         clearTimeout(writeSyncTimer)
         writeSyncTimer = undefined
       }
+      if (realtimeSyncTimer) {
+        clearTimeout(realtimeSyncTimer)
+        realtimeSyncTimer = undefined
+      }
+      // `start()` must be able to install timers and realtime again after a
+      // foreground/background lifecycle stop.
+      started = false
+      startPromise = null
+      void uninstallRealtime()
     },
 
     async syncNow(syncOptions: SyncNowOptions = {}) {
@@ -484,33 +664,64 @@ export function createSyncClient<Ctx>(
         })
       }
       syncing = true
-      syncPromise = doSyncMaybeDrain(syncOptions)
-        .catch((err: unknown) => {
+      const run = (async () => {
+        try {
+          const result = await doSyncMaybeDrain(syncOptions)
+          // Listeners commonly read status to update UI. Publish the successful
+          // sync only after that status has become idle.
+          syncing = false
+          emitSync(result.pushed, result.pulled)
+          return result
+        } catch (err: unknown) {
           lastError = err instanceof Error ? err : new Error(String(err))
           emitError(lastError)
           throw err
-        })
-        .finally(() => {
+        } finally {
           syncing = false
-          syncPromise = null
-        })
-      return syncPromise
+        }
+      })()
+      syncPromise = run
+      void run.then(
+        () => {
+          if (syncPromise === run) syncPromise = null
+        },
+        () => {
+          if (syncPromise === run) syncPromise = null
+        },
+      )
+      return run
     },
 
     async enableSync(opts: EnableSyncOptions) {
       const newTransport: Transport | null = opts.transport
-        ?? (opts.syncUrl ? createHttpTransport(opts.syncUrl, opts.headers) : null)
+        ?? (opts.syncUrl ? createHttpTransport(opts.syncUrl, opts.headers, opts.syncRequestTimeoutMs) : null)
       if (!newTransport) {
         throw new Error('enableSync: provide either `transport` or `syncUrl`')
       }
       currentTransport = newTransport
+      const nextRealtime = normalizeRealtime(
+        opts.realtime ?? (opts.eventsUrl ? createEventSourceRealtime(opts.eventsUrl, opts.headers) : undefined),
+      )
+      if (nextRealtime && nextRealtime !== currentRealtime) {
+        await uninstallRealtime()
+        currentRealtime = nextRealtime
+      }
       localOnly = false
       await initIfNeeded()
+      await installRealtime()
       // Reset backoff so the next poll runs at the base interval.
       currentPollInterval = pollInterval
       scheduleNextPoll()
       // Immediate round-trip to flush accumulated pending writes.
       return client.syncNow({ drain: true })
+    },
+
+    disableSync() {
+      client.stop()
+      localOnly = true
+      currentTransport = null
+      currentRealtime = null
+      lastError = null
     },
 
     isLocalOnly: () => localOnly,
@@ -533,29 +744,52 @@ export function createSyncClient<Ctx>(
       if (localOnly || !currentTransport) {
         throw new Error('recover() requires sync to be enabled; call enableSync() first')
       }
-      syncing = true
-      try {
-        // Step 1: push any remaining pending writes (server still accepts them)
-        await doSync()
-
-        // Step 2: wipe local synced data (keep internal tables)
-        for (const modelKey of Object.keys(options.schema)) {
-          // Delete all rows in this model's local table
-          const rows = await options.database.findMany({ model: modelKey })
-          for (const row of rows) {
-            const pkField = getPrimaryKey(modelKey, getModelDef(modelKey))
-            await options.database.delete({ model: modelKey, where: { [pkField]: row[pkField] } })
-          }
-        }
-
-        // Step 3: reset sync marker to zero (full refetch)
-        await setMeta('last_sync_hlc', HLC_ZERO)
-
-        // Step 4: full sync from zero
-        return await doSync()
-      } finally {
-        syncing = false
+      if (syncing && syncPromise) {
+        await syncPromise
       }
+      syncing = true
+      const run = (async () => {
+        try {
+          // Flush pending local writes before replacing the local snapshot.
+          await doSync()
+
+          // Wipe only synced models. The durable outbox and HLC state survive.
+          for (const modelKey of Object.keys(options.schema)) {
+            const rows = await options.database.findMany({ model: modelKey })
+            const pkField = getPrimaryKey(modelKey, getModelDef(modelKey))
+            for (const row of rows) {
+              await options.database.delete({ model: modelKey, where: { [pkField]: row[pkField] } })
+            }
+            if (rows.length > 0) emitChange(modelKey, rows.map((row) => String(row[pkField])))
+          }
+
+          // The preparatory sync may have left a pagination cursor. A full
+          // snapshot must always start at zero with no continuation state.
+          await setMeta('last_sync_hlc', HLC_ZERO)
+          await setMeta('pending_cursor', '')
+
+          const result = await doSyncMaybeDrain({ drain: true })
+          syncing = false
+          emitSync(result.pushed, result.pulled)
+          return result
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err : new Error(String(err))
+          emitError(lastError)
+          throw err
+        } finally {
+          syncing = false
+        }
+      })()
+      syncPromise = run
+      void run.then(
+        () => {
+          if (syncPromise === run) syncPromise = null
+        },
+        () => {
+          if (syncPromise === run) syncPromise = null
+        },
+      )
+      return run
     },
 
     on(event: 'change' | 'sync' | 'error', listener: ChangeListener | SyncListener | ErrorListener) {
@@ -573,17 +807,17 @@ export function createSyncClient<Ctx>(
           await initIfNeeded()
           const hlc = clock.tick()
           const row: Row = { ...data, [hlcField]: hlc }
-          const result = await options.database.upsertIfNewer({
-            model: modelKey,
-            row,
+          const opId = generateId()
+          await options.database.transaction(async (tx) => {
+            const result = await tx.upsertIfNewer({ model: modelKey, row })
+            if (result === 'skipped') {
+              throw new Error(
+                `insert on "${modelKey}": row ${String(row[pkField])} exists with newer HLC`,
+              )
+            }
+            await enqueuePending(tx, opId, { type: 'upsert', model: modelKey, row: { ...row } })
+            await setMeta('hlc_state', clock.current(), tx)
           })
-          if (result === 'skipped') {
-            throw new Error(
-              `insert on "${modelKey}": row ${String(row[pkField])} exists with newer HLC`,
-            )
-          }
-          await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
-          await setMeta('hlc_state', clock.current())
           emitChange(modelKey, [String(row[pkField])])
           await syncAfterWrite(writeOptions)
           return { ...row }
@@ -598,11 +832,22 @@ export function createSyncClient<Ctx>(
           if (!existing) {
             throw new Error(`update on "${modelKey}": row ${id} not found`)
           }
+          const hasSyncedPatch = Object.keys(patch).some(
+            (fieldName) => (modelDef.fields[fieldName] as FieldDef | undefined)?.sync !== false,
+          )
+          if (!hasSyncedPatch) {
+            await options.database.update({ model: modelKey, where: { [pkField]: id }, update: patch })
+            emitChange(modelKey, [id])
+            return { ...existing, ...patch }
+          }
           const hlc = clock.tick()
           const row: Row = { ...existing, ...patch, [hlcField]: hlc }
-          await options.database.upsertIfNewer({ model: modelKey, row })
-          await enqueuePending({ type: 'upsert', model: modelKey, row: { ...row } })
-          await setMeta('hlc_state', clock.current())
+          const opId = generateId()
+          await options.database.transaction(async (tx) => {
+            await tx.upsertIfNewer({ model: modelKey, row })
+            await enqueuePending(tx, opId, { type: 'upsert', model: modelKey, row: { ...row } })
+            await setMeta('hlc_state', clock.current(), tx)
+          })
           emitChange(modelKey, [id])
           await syncAfterWrite(writeOptions)
           return { ...row }
@@ -614,16 +859,19 @@ export function createSyncClient<Ctx>(
             model: modelKey,
             where: { [pkField]: id },
           })
+          if (!existing) {
+            throw new Error(`delete on "${modelKey}": row ${id} not found`)
+          }
           const hlc = clock.tick()
-          const scope = existing ? scopeFromRow(existing, modelKey) : {}
-          await options.database.delete({
-            model: modelKey,
-            where: { [pkField]: id },
-          })
+          const scope = scopeFromRow(existing, modelKey)
           const tombstone: Tombstone = { model: modelKey, id, hlc, scope }
-          await options.database.upsertTombstoneIfNewer(tombstone)
-          await enqueuePending({ type: 'delete', model: modelKey, tombstone })
-          await setMeta('hlc_state', clock.current())
+          const opId = generateId()
+          await options.database.transaction(async (tx) => {
+            await tx.delete({ model: modelKey, where: { [pkField]: id } })
+            await tx.upsertTombstoneIfNewer(tombstone)
+            await enqueuePending(tx, opId, { type: 'delete', model: modelKey, tombstone })
+            await setMeta('hlc_state', clock.current(), tx)
+          })
           emitChange(modelKey, [id])
           await syncAfterWrite(writeOptions)
         },
@@ -654,7 +902,13 @@ export function createSyncClient<Ctx>(
     const total: SyncResult = { ...first }
     let guard = 0
     while (total.hasMore) {
-      if (++guard >= 50) break
+      if (++guard >= 50) {
+        // A repeated or non-advancing server cursor must never leave a
+        // foreground caller (for example pull-to-refresh) awaiting forever.
+        // Keep the durable cursor/pending queue intact; the next sync can
+        // resume once the server-side pagination fault is fixed.
+        throw new Error('Sync pagination did not complete after 50 pages')
+      }
       const next = await doSync()
       total.pushed += next.pushed
       total.pulled += next.pulled
@@ -673,19 +927,20 @@ export function createSyncClient<Ctx>(
         ? (JSON.parse(pendingCursorRaw) as { model: string; hlc: string; id: string })
         : null
     const pendingRows = await drainPending()
+    const outboundPending = pendingRows.slice(0, maxPushBatchSize)
 
-    const changes: ChangeSet = {}
-    const tombstones: Tombstone[] = []
-    for (const { op } of pendingRows) {
+    const changes: ClientChangeSet = {}
+    const tombstones: DeleteOperation[] = []
+    for (const { id, op } of outboundPending) {
       if (op.type === 'upsert' && op.row) {
         let list = changes[op.model]
         if (!list) {
           list = []
           changes[op.model] = list
         }
-        list.push(op.row)
+        list.push({ opId: id, row: rowForSync(op.model, op.row) })
       } else if (op.type === 'delete' && op.tombstone) {
-        tombstones.push(op.tombstone)
+        tombstones.push({ opId: id, tombstone: op.tombstone })
       }
     }
 
@@ -702,7 +957,7 @@ export function createSyncClient<Ctx>(
     if (!currentTransport) {
       throw new Error('doSync called without a transport — this is a bug')
     }
-    const response = await currentTransport(request)
+    const response = parseSyncResponse(await currentTransport(request))
 
     clock.receive(response.serverTime)
 
@@ -713,7 +968,14 @@ export function createSyncClient<Ctx>(
     await options.database.transaction(async (tx) => {
       for (const [modelKey, rows] of Object.entries(response.changes)) {
         for (const row of rows) {
-          const outcome = await tx.upsertIfNewer({ model: modelKey, row })
+          const existing = await tx.findOne({
+            model: modelKey,
+            where: { [getPrimaryKey(modelKey, getModelDef(modelKey))]: row[getPrimaryKey(modelKey, getModelDef(modelKey))] },
+          })
+          const outcome = await tx.upsertIfNewer({
+            model: modelKey,
+            row: mergeRemoteRow(modelKey, existing, row),
+          })
           if (outcome !== 'skipped') {
             pulled += 1
             const ids = changedModels.get(modelKey) ?? []
@@ -737,24 +999,16 @@ export function createSyncClient<Ctx>(
           changedModels.set(tombstone.model, ids)
         }
       }
+
+      await clearPending(tx, outboundPending.map((p) => p.id))
+      if (response.hasMore && response.cursor) {
+        await setMeta('pending_cursor', JSON.stringify(response.cursor), tx)
+      } else {
+        await setMeta('pending_cursor', '', tx)
+        await setMeta('last_sync_hlc', response.serverTime, tx)
+      }
+      await setMeta('hlc_state', clock.current(), tx)
     })
-
-    // Clear acknowledged pending ops
-    await clearPending(pendingRows.map((p) => p.id))
-
-    // Persist sync state. While the server still has more pages
-    // (hasMore + cursor), keep `last_sync_hlc` pointing at the prior
-    // checkpoint and stash the continuation cursor so the next
-    // syncNow picks up from the same model offset. Only once the
-    // server reports a fully drained pull do we advance
-    // `last_sync_hlc` to the new serverTime.
-    if (response.hasMore && response.cursor) {
-      await setMeta('pending_cursor', JSON.stringify(response.cursor))
-    } else {
-      await setMeta('pending_cursor', '')
-      await setMeta('last_sync_hlc', response.serverTime)
-    }
-    await setMeta('hlc_state', clock.current())
     lastSyncedAt = Date.now()
     lastError = null
 
@@ -762,18 +1016,25 @@ export function createSyncClient<Ctx>(
     for (const [model, ids] of changedModels) {
       emitChange(model, ids)
     }
-    emitSync(pendingRows.length, pulled)
 
     return {
-      pushed: pendingRows.length,
+      pushed: outboundPending.length,
       pulled,
       tombstonesApplied,
-      hasMore: response.hasMore,
+      hasMore: response.hasMore || pendingRows.length > outboundPending.length,
       staleClient: response.staleClient ?? false,
     }
   }
 
   return client
+}
+
+function normalizeRealtime(
+  realtime: RealtimeSubscribe | RealtimeTransport | undefined,
+): RealtimeSubscribe | null {
+  if (!realtime) return null
+  if (typeof realtime === 'function') return realtime
+  return realtime.subscribe.bind(realtime)
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -805,14 +1066,38 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 function createHttpTransport(
   url: string,
   headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>),
+  timeoutMs = 15_000,
 ): Transport {
   return async (request) => {
     const resolvedHeaders = typeof headers === 'function' ? await headers() : (headers ?? {})
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...resolvedHeaders },
-      body: JSON.stringify(request),
-    })
+    const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+    let didTimeOut = false
+    let timeout: ReturnType<typeof setTimeout> | null = null
+    let res: Response
+    try {
+      const fetchRequest = fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...resolvedHeaders },
+        body: JSON.stringify(request),
+        ...(controller ? { signal: controller.signal } : {}),
+      })
+      // AbortController is advisory in some React Native fetch stacks: they
+      // observe the signal yet leave the request Promise pending. Race it
+      // against an independent rejection so every sync call has a hard bound.
+      const timedOut = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          didTimeOut = true
+          controller?.abort()
+          reject(new Error(`Sync request timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      })
+      res = await Promise.race([fetchRequest, timedOut])
+    } catch (err) {
+      if (didTimeOut) throw new Error(`Sync request timed out after ${timeoutMs}ms`)
+      throw err
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       const msg = (body as Record<string, unknown>)?.error
@@ -821,5 +1106,40 @@ function createHttpTransport(
       throw new Error(msg)
     }
     return res.json() as Promise<SyncResponse>
+  }
+}
+
+/**
+ * Create a browser/EventSource realtime transport from an SSE endpoint.
+ *
+ * React Native does not ship EventSource by default. In RN, pass a custom
+ * `realtime.subscribe` implementation or an EventSource polyfill.
+ */
+export function createEventSourceRealtime(
+  url: string,
+  headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>),
+): RealtimeSubscribe {
+  return ({ onEvent, onError }) => {
+    const EventSourceCtor = (globalThis as unknown as { EventSource?: typeof EventSource }).EventSource
+    if (!EventSourceCtor) {
+      throw new Error('EventSource is not available; pass a custom realtime.subscribe transport')
+    }
+
+    // Native EventSource cannot set dynamic headers. Keep the headers argument
+    // for API symmetry; custom transports should use it where supported.
+    void headers
+
+    const source = new EventSourceCtor(url)
+    source.onmessage = (message) => {
+      try {
+        onEvent(JSON.parse(message.data) as SyncRealtimeEvent)
+      } catch (err) {
+        onError(err instanceof Error ? err : new Error(String(err)))
+      }
+    }
+    source.onerror = () => {
+      onError(new Error('Realtime EventSource connection failed'))
+    }
+    return () => source.close()
   }
 }

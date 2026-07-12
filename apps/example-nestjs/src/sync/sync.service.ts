@@ -27,6 +27,7 @@ export class SyncService {
             changed: { type: 'string' },
           },
           scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+          tombstoneScope: ['userId'],
         },
       })
       return db
@@ -42,6 +43,7 @@ export class SyncService {
           changed: { type: 'string' },
         },
         scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+        tombstoneScope: ['userId'],
       },
     },
 

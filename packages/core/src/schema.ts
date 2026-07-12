@@ -82,6 +82,14 @@ export interface ModelDef<Ctx = any> {
   migrations?: Record<number, (row: Row) => Row>
   /** Multi-tenant scope filter. Returns predicate columns extracted from ctx. */
   scope?: (ctx: Ctx) => Scope
+  /**
+   * Fields copied into delete tombstones for tenant filtering.
+   *
+   * Tombstones are replicated, so the complete deleted row must never be
+   * copied here. Scoped models must declare exactly the fields their server
+   * `scope` needs.
+   */
+  tombstoneScope?: readonly string[]
   /** Whether clients are allowed to insert. Default: true. */
   clientCanCreate?: boolean
   /** Whether clients are allowed to update. Default: true. */
@@ -165,6 +173,53 @@ function validateModel(modelKey: string, def: ModelDef, allModels: SyncSchema): 
       undefined,
       `${modelKey}.fields`,
     )
+  }
+
+  if (def.tombstoneScope) {
+    for (const fieldName of def.tombstoneScope) {
+      if (!(fieldName in def.fields)) {
+        throw new SchemaViolationError(
+          `Model "${modelKey}" tombstoneScope field "${fieldName}" is not declared`,
+          undefined,
+          `${modelKey}.tombstoneScope`,
+        )
+      }
+    }
+  }
+
+  if (def.scope && def.clientCanDelete !== false && !def.tombstoneScope) {
+    throw new SchemaViolationError(
+      `Scoped model "${modelKey}" must declare tombstoneScope when clients may delete rows`,
+      'Include only tenancy fields needed to authorize tombstones, for example tombstoneScope: [\'familyId\'].',
+      `${modelKey}.tombstoneScope`,
+    )
+  }
+
+  if (def.version !== undefined && (!Number.isInteger(def.version) || def.version < 0)) {
+    throw new SchemaViolationError(
+      `Model "${modelKey}" version must be a non-negative integer`,
+      undefined,
+      `${modelKey}.version`,
+    )
+  }
+  if (def.migrations) {
+    for (const [version, migration] of Object.entries(def.migrations)) {
+      const numericVersion = Number(version)
+      if (!Number.isInteger(numericVersion) || numericVersion <= 0 || typeof migration !== 'function') {
+        throw new SchemaViolationError(
+          `Model "${modelKey}" migrations must map positive integer versions to functions`,
+          undefined,
+          `${modelKey}.migrations.${version}`,
+        )
+      }
+      if (def.version !== undefined && numericVersion > def.version) {
+        throw new SchemaViolationError(
+          `Model "${modelKey}" migration ${numericVersion} exceeds version ${def.version}`,
+          undefined,
+          `${modelKey}.migrations.${version}`,
+        )
+      }
+    }
   }
 }
 

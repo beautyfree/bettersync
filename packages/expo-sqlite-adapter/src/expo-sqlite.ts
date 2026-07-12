@@ -18,12 +18,15 @@ import {
   type AdapterCapabilities,
   type FindChangedSinceParams,
   type FindChangedSinceResult,
+  type FindTombstonesSinceParams,
+  type FindTombstonesSinceResult,
   type Row,
   type Scope,
   type SyncAdapter,
   type SyncSchema,
   type Tombstone,
   type Where,
+  columnMappingAdapter,
   getModelTableName,
   getPrimaryKey,
   shouldApplyTombstone,
@@ -43,6 +46,7 @@ const CAPABILITIES: AdapterCapabilities = {
 }
 
 const TOMBSTONE_TABLE = 'sync_tombstones'
+const OPERATION_TABLE = 'sync_operations'
 
 export interface ExpoSqliteAdapterOptions {
   hlcField?: string
@@ -143,9 +147,11 @@ export function expoSqliteAdapter(
           await conn.execAsync(
             `CREATE TABLE IF NOT EXISTS "${table}" (${colDefs.join(', ')})`,
           )
-          await conn.execAsync(
-            `CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`,
-          )
+          if (!modelKey.startsWith('_sync_')) {
+            await conn.execAsync(
+              `CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`,
+            )
+          }
         }
         await conn.execAsync(`
           CREATE TABLE IF NOT EXISTS "${TOMBSTONE_TABLE}" (
@@ -160,6 +166,14 @@ export function expoSqliteAdapter(
         await conn.execAsync(
           `CREATE INDEX IF NOT EXISTS "idx_tombstones_hlc" ON "${TOMBSTONE_TABLE}" (hlc)`,
         )
+        await conn.execAsync(`
+          CREATE TABLE IF NOT EXISTS "${OPERATION_TABLE}" (
+            model TEXT NOT NULL,
+            op_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (model, op_id)
+          )
+        `)
       },
 
       async create({ model, data }) {
@@ -321,25 +335,48 @@ export function expoSqliteAdapter(
         return wasExisting ? 'updated' : 'inserted'
       },
 
-      async findTombstonesSince({ sinceHlc, limit: lim, scope }) {
+      async findTombstonesSince(
+        params: FindTombstonesSinceParams,
+      ): Promise<FindTombstonesSinceResult> {
+        const { model, sinceHlc, limit: lim, cursor, scope } = params
+        const conditions: string[] = ['model = ?']
+        const values: unknown[] = [model]
         if (scope && Object.keys(scope).length > 0) {
-          const conditions: string[] = ['hlc > ?']
-          const params: unknown[] = [sinceHlc]
-          for (const [k, v] of Object.entries(scope)) {
+          for (const [key, value] of Object.entries(scope)) {
             conditions.push(`json_extract(scope, '$.' || ?) = ?`)
-            params.push(k, v)
+            values.push(key, value)
           }
-          const rows = await conn.getAllAsync<Row>(
-            `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE ${conditions.join(' AND ')} ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-            ...params,
-          )
-          return rows.map(toTombstone)
         }
-        const rows = await conn.getAllAsync<Row>(
-          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE hlc > ? ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-          sinceHlc,
+        if (cursor) {
+          conditions.push('(hlc > ? OR (hlc = ? AND id > ?))')
+          values.push(cursor.hlc, cursor.hlc, cursor.id)
+        } else {
+          conditions.push('hlc > ?')
+          values.push(sinceHlc)
+        }
+
+        const rows = (await conn.getAllAsync<Row>(
+          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE ${conditions.join(' AND ')} ORDER BY hlc ASC, id ASC LIMIT ${lim + 1}`,
+          ...values,
+        )) as Row[]
+        const hasMore = rows.length > lim
+        const page = hasMore ? rows.slice(0, lim) : rows
+        const result: FindTombstonesSinceResult = { tombstones: page.map(toTombstone) }
+        if (hasMore && page.length > 0) {
+          const last = page[page.length - 1]!
+          result.nextCursor = { hlc: String(last.hlc), id: String(last.id) }
+        }
+        return result
+      },
+
+      async claimOperation({ model, opId }) {
+        const result = await conn.runAsync(
+          `INSERT INTO "${OPERATION_TABLE}" (model, op_id) VALUES (?, ?)
+           ON CONFLICT (model, op_id) DO NOTHING`,
+          model,
+          opId,
         )
-        return rows.map(toTombstone)
+        return result.changes > 0
       },
 
       async upsertTombstoneIfNewer(t) {
@@ -433,7 +470,7 @@ export function expoSqliteAdapter(
     return adapter
   }
 
-  return makeAdapter(db)
+  return columnMappingAdapter(makeAdapter(db), hlcField)
 }
 
 function sqlType(type: string | readonly string[]): string {

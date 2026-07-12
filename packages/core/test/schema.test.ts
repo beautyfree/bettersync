@@ -72,6 +72,25 @@ describe('defineSchema validation', () => {
     ).toThrow(/2 primary keys/)
   })
 
+  it('requires explicit tombstone scope for scoped client-deletable models', () => {
+    expect(() => validateSchema({
+      project: {
+        fields: { id: { type: 'string', primaryKey: true }, userId: { type: 'string' } },
+        scope: () => ({ userId: 'u1' }),
+      },
+    })).toThrow(/tombstoneScope/)
+  })
+
+  it('accepts scoped model without tombstone scope when client deletes are disabled', () => {
+    expect(() => validateSchema({
+      project: {
+        fields: { id: { type: 'string', primaryKey: true }, userId: { type: 'string' } },
+        scope: () => ({ userId: 'u1' }),
+        clientCanDelete: false,
+      },
+    })).not.toThrow()
+  })
+
   it('rejects reserved field names', () => {
     for (const reserved of RESERVED_FIELDS) {
       expect(() =>

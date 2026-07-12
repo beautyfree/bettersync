@@ -152,6 +152,7 @@ export const sync = betterSync({
         changed:   { type: 'string' },
       },
       scope: (ctx) => ({ userId: ctx.userId }),
+      tombstoneScope: ['userId'],
     },
   },
 })

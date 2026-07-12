@@ -84,6 +84,7 @@ describe('full E2E via bettersync root import', () => {
           changed: { type: 'string' },
         },
         scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+        tombstoneScope: ['userId'],
       },
     })
 

@@ -51,6 +51,21 @@ export interface Tombstone {
  */
 export type ChangeRow = Row
 
+/** Immutable local write. Server uses opId to make retries idempotent. */
+export interface UpsertOperation {
+  opId: string
+  row: Row
+}
+
+/** Immutable local delete. Server uses opId to make retries idempotent. */
+export interface DeleteOperation {
+  opId: string
+  tombstone: Tombstone
+}
+
+/** Client write batch. Server responses continue to use plain ChangeSet rows. */
+export type ClientChangeSet = Record<string, Array<UpsertOperation | ChangeRow>>
+
 /**
  * Request body sent from client to server.
  */
@@ -74,10 +89,10 @@ export interface SyncRequest {
   forceFetch?: string[]
 
   /** Client → server changes, grouped by model. */
-  changes?: ChangeSet
+  changes?: ClientChangeSet
 
   /** Client → server tombstones. */
-  tombstones?: Tombstone[]
+  tombstones?: Array<DeleteOperation | Tombstone>
 }
 
 /**
@@ -107,6 +122,21 @@ export interface SyncResponse {
    * Client must call `sync.recover()` to push pending writes and refetch.
    */
   staleClient?: boolean
+}
+
+/**
+ * Realtime wake-up event. Carries no row data by design.
+ *
+ * Servers may send this over SSE/WebSocket/push after a sync commit.
+ * Clients should treat it as invalidation only and call `syncNow()` to
+ * fetch scoped data through the normal sync endpoint.
+ */
+export interface SyncRealtimeEvent {
+  type: 'changes'
+  /** Unique model names changed by the commit. */
+  models: string[]
+  /** Server-side timestamp for debugging/ordering only. */
+  at: string
 }
 
 /**
@@ -185,16 +215,94 @@ export function parseSyncRequest(input: unknown): SyncRequest {
   if (changes !== undefined && !isObject(changes)) {
     throw new SchemaViolationError('SyncRequest.changes must be an object', undefined, 'changes')
   }
+  if (changes) {
+    for (const [model, operations] of Object.entries(changes)) {
+      if (!Array.isArray(operations)) {
+        throw new SchemaViolationError(`SyncRequest.changes.${model} must be an array`, undefined, `changes.${model}`)
+      }
+      for (let i = 0; i < operations.length; i++) {
+        const operation = operations[i]
+        if (!isObject(operation)) {
+          throw new SchemaViolationError(
+            `SyncRequest.changes.${model}[${i}] must be a row or { opId, row }`,
+            undefined,
+            `changes.${model}[${i}]`,
+          )
+        }
+        const hasOperationEnvelope = 'opId' in operation || 'row' in operation
+        if (hasOperationEnvelope &&
+          (typeof operation.opId !== 'string' || operation.opId.length === 0 || !isObject(operation.row))) {
+          throw new SchemaViolationError(
+            `SyncRequest.changes.${model}[${i}] must have { opId, row }`,
+            undefined,
+            `changes.${model}[${i}]`,
+          )
+        }
+      }
+    }
+  }
   if (tombstones !== undefined) {
     if (!Array.isArray(tombstones)) {
       throw new SchemaViolationError('SyncRequest.tombstones must be an array', undefined, 'tombstones')
     }
     for (let i = 0; i < tombstones.length; i++) {
-      validateTombstone(tombstones[i], `tombstones[${i}]`)
+      const operation = tombstones[i]
+      if (!isObject(operation)) {
+        throw new SchemaViolationError(`tombstones[${i}] must be a tombstone or { opId, tombstone }`, undefined, `tombstones[${i}]`)
+      }
+      const hasOperationEnvelope = 'opId' in operation || 'tombstone' in operation
+      if (hasOperationEnvelope) {
+        if (typeof operation.opId !== 'string' || operation.opId.length === 0) {
+          throw new SchemaViolationError(`tombstones[${i}] must have a non-empty opId`, undefined, `tombstones[${i}]`)
+        }
+        validateTombstone(operation.tombstone, `tombstones[${i}].tombstone`)
+      } else {
+        validateTombstone(operation, `tombstones[${i}]`)
+      }
     }
   }
 
   return input as unknown as SyncRequest
+}
+
+/** Validate an untrusted server response before client writes it locally. */
+export function parseSyncResponse(input: unknown): SyncResponse {
+  if (!isObject(input)) {
+    throw new SchemaViolationError('SyncResponse must be a JSON object')
+  }
+  const { protocolVersion, serverTime, changes, tombstones, hasMore, cursor, staleClient } = input
+  if (typeof protocolVersion !== 'string') {
+    throw new SchemaViolationError('SyncResponse.protocolVersion must be a string', undefined, 'protocolVersion')
+  }
+  if (!isHlcLike(serverTime)) {
+    throw new SchemaViolationError('SyncResponse.serverTime must be a 24-hex HLC string', undefined, 'serverTime')
+  }
+  if (!isObject(changes)) {
+    throw new SchemaViolationError('SyncResponse.changes must be an object', undefined, 'changes')
+  }
+  for (const [model, rows] of Object.entries(changes)) {
+    if (!Array.isArray(rows) || rows.some((row) => !isObject(row))) {
+      throw new SchemaViolationError(`SyncResponse.changes.${model} must be an array of rows`, undefined, `changes.${model}`)
+    }
+  }
+  if (!Array.isArray(tombstones)) {
+    throw new SchemaViolationError('SyncResponse.tombstones must be an array', undefined, 'tombstones')
+  }
+  for (let index = 0; index < tombstones.length; index++) {
+    validateTombstone(tombstones[index], `tombstones[${index}]`)
+  }
+  if (typeof hasMore !== 'boolean') {
+    throw new SchemaViolationError('SyncResponse.hasMore must be a boolean', undefined, 'hasMore')
+  }
+  if (cursor !== null && cursor !== undefined) {
+    if (!isObject(cursor) || typeof cursor.model !== 'string' || !isHlcLike(cursor.hlc) || typeof cursor.id !== 'string') {
+      throw new SchemaViolationError('SyncResponse.cursor must have { model, hlc, id } or null', undefined, 'cursor')
+    }
+  }
+  if (staleClient !== undefined && typeof staleClient !== 'boolean') {
+    throw new SchemaViolationError('SyncResponse.staleClient must be a boolean', undefined, 'staleClient')
+  }
+  return input as unknown as SyncResponse
 }
 
 function validateTombstone(t: unknown, path: string): asserts t is Tombstone {

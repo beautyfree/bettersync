@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PROTOCOL_VERSION,
   type SyncRequest,
+  type SyncRealtimeEvent,
   type SyncResponse,
   type SyncSchema,
 } from '@bettersync/core'
 import { memoryAdapter } from '@bettersync/memory-adapter'
-import { createSyncClient, type Transport } from '../src/index'
+import { createSyncClient, type RealtimeHandlers, type Transport } from '../src/index'
 
 interface Ctx {
   userId: string
@@ -21,6 +22,7 @@ const schema: SyncSchema<Ctx> = {
       changed: { type: 'string' },
     },
     scope: (ctx) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
 }
 
@@ -60,7 +62,34 @@ async function waitFor(predicate: () => boolean, timeoutMs = 250): Promise<void>
   }
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('createSyncClient local-first API', () => {
+  it('rejects a non-advancing pagination drain instead of keeping callers pending', async () => {
+    let requests = 0
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      clock: { nodeId: 1, now: () => 1000 },
+      transport: async () => {
+        requests += 1
+        return {
+          ...emptyResponse(`0000010000000000000000${String(requests).padStart(2, '0')}`),
+          hasMore: true,
+          cursor: { model: 'project', hlc: '000001000000000000000001', id: 'p1' },
+        }
+      },
+    })
+
+    await expect(client.syncNow({ drain: true })).rejects.toThrow(
+      'Sync pagination did not complete after 50 pages',
+    )
+    expect(requests).toBe(50)
+    expect((await client.status()).isSyncing).toBe(false)
+  })
+
   it('insert writes to local store with HLC changed field', async () => {
     const { transport } = mockTransport(() =>
       emptyResponse('000001000000000000000000'),
@@ -134,16 +163,140 @@ describe('createSyncClient local-first API', () => {
     expect(found).toBeNull()
 
     const tombs = await db.findTombstonesSince({
+      model: 'project',
       sinceHlc: '000000000000000000000000',
       limit: 10,
       scope: { userId: 'alice' },
     })
-    expect(tombs.length).toBe(1)
-    expect(tombs[0]?.id).toBe('p1')
+    expect(tombs.tombstones).toHaveLength(1)
+    expect(tombs.tombstones[0]?.id).toBe('p1')
+  })
+
+  it('rejects delete of a missing local row instead of queueing an unscoped tombstone', async () => {
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport: async () => emptyResponse('000001000000000000000000'),
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+
+    await expect(client.model('project').delete('missing')).rejects.toThrow(
+      'delete on "project": row missing not found',
+    )
+    expect((await client.status()).pendingCount).toBe(0)
   })
 })
 
 describe('syncNow round-trip', () => {
+  it('drains a bounded outbound batch without dropping queued operations', async () => {
+    const { transport, requests } = mockTransport(() =>
+      emptyResponse('000001000000000000000000'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWrite: false,
+      maxPushBatchSize: 2,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+    for (let index = 0; index < 5; index++) {
+      await client.model('project').insert({ id: `p${index}`, userId: 'alice', title: 'queued' })
+    }
+
+    const result = await client.syncNow({ drain: true })
+    expect(result.pushed).toBe(5)
+    expect(requests).toHaveLength(3)
+    expect(requests.map((request) =>
+      Object.values(request.changes ?? {}).flat().length,
+    )).toEqual([2, 2, 1])
+    expect((await client.status()).pendingCount).toBe(0)
+  })
+
+  it('emits sync after isSyncing has been cleared', async () => {
+    const { transport } = mockTransport(() =>
+      emptyResponse('000001000000000000000000'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    let statusAtSyncEvent: Awaited<ReturnType<typeof client.status>> | null = null
+    client.on('sync', () => {
+      void client.status().then((status) => {
+        statusAtSyncEvent = status
+      })
+    })
+
+    await client.syncNow({ drain: true })
+    await waitFor(() => statusAtSyncEvent !== null)
+
+    expect(statusAtSyncEvent?.isSyncing).toBe(false)
+  })
+
+  it('aborts a hung HTTP request so sync status cannot stay active forever', async () => {
+    let aborted = false
+    vi.stubGlobal('fetch', (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+          reject(new Error('aborted'))
+        })
+      }),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      syncUrl: 'https://sync.example.test/api/sync',
+      syncRequestTimeoutMs: 10,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+
+    await expect(client.syncNow()).rejects.toThrow('Sync request timed out after 10ms')
+    expect(aborted).toBe(true)
+    expect((await client.status()).isSyncing).toBe(false)
+    expect((await client.status()).lastError?.message).toBe('Sync request timed out after 10ms')
+  })
+
+  it('settles the timeout even when fetch ignores AbortController', async () => {
+    let aborted = false
+    vi.stubGlobal('fetch', (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise<Response>(() => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+          // React Native fetch implementations may observe abort without
+          // rejecting this Promise. The transport still must settle.
+        })
+      }),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      syncUrl: 'https://sync.example.test/api/sync',
+      syncRequestTimeoutMs: 10,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+
+    const outcome = await Promise.race([
+      client.syncNow().then(
+        () => 'resolved',
+        (error: unknown) => error,
+      ),
+      new Promise<'still-pending'>((resolve) => setTimeout(() => resolve('still-pending'), 80)),
+    ])
+
+    expect(aborted).toBe(true)
+    expect(outcome).toBeInstanceOf(Error)
+    expect((outcome as Error).message).toBe('Sync request timed out after 10ms')
+  })
+
   it('write { sync: remote } resolves only after pending queue reaches the server', async () => {
     const { transport, requests } = mockTransport(() =>
       emptyResponse('0000000027100001a1a2a3a4'),
@@ -163,7 +316,7 @@ describe('syncNow round-trip', () => {
     }, { sync: 'remote' })
 
     expect(requests.length).toBe(1)
-    expect(requests[0]?.changes?.project?.[0]?.id).toBe('p1')
+    expect(requests[0]?.changes?.project?.[0]?.row.id).toBe('p1')
 
     await client.syncNow()
     expect(requests[1]?.changes).toBeUndefined()
@@ -189,7 +342,57 @@ describe('syncNow round-trip', () => {
     })
 
     await waitFor(() => requests.length > 0)
-    expect(requests[0]?.changes?.project?.[0]?.id).toBe('p1')
+    expect(requests[0]?.changes?.project?.[0]?.row.id).toBe('p1')
+  })
+
+  it('realtime event wakes client and pulls remote changes immediately', async () => {
+    let realtimeHandlers: RealtimeHandlers | null = null
+    const remoteRow = {
+      id: 'p2',
+      userId: 'alice',
+      title: 'remote',
+      changed: '0000000027100001a1a2a3a4',
+    }
+    const { transport, requests } = mockTransport((req) => {
+      if (requests.length <= 1) return emptyResponse('0000000027100001a1a2a3a4')
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        serverTime: '0000000027110001a1a2a3a4',
+        changes: { project: [remoteRow] },
+        tombstones: [],
+        hasMore: false,
+        cursor: null,
+      }
+    })
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      realtime: {
+        subscribe(handlers) {
+          realtimeHandlers = handlers
+          return () => {
+            realtimeHandlers = null
+          }
+        },
+      },
+      realtimeDebounceMs: 1,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+    await client.syncNow()
+
+    const event: SyncRealtimeEvent = {
+      type: 'changes',
+      models: ['project'],
+      at: new Date().toISOString(),
+    }
+    realtimeHandlers?.onEvent(event)
+
+    await waitFor(() => requests.length >= 2)
+    const found = await client.model('project').findOne({ id: 'p2' })
+    expect(found?.title).toBe('remote')
   })
 
   it('status exposes pending count, last sync timestamp, and last error', async () => {
@@ -304,9 +507,125 @@ describe('syncNow round-trip', () => {
     expect(requests[0]?.since).toBe('000000000000000000000000')
     expect(requests[1]?.since).toBe(serverTimeMarker)
   })
+
+  it('recover clears stale pagination and drains the full snapshot', async () => {
+    const checkpoint = '0000000027100001a1a2a3a4'
+    const pageOneHlc = '0000000027110001a1a2a3a4'
+    const pageTwoHlc = '0000000027120001a1a2a3a4'
+    const { transport, requests } = mockTransport((request) => {
+      if (requests.length === 1) return emptyResponse(checkpoint)
+
+      // Recovery first flushes local pending writes. Model a stale cursor left
+      // by that request: recovery must discard it before its full refetch.
+      if (requests.length === 2) {
+        return {
+          ...emptyResponse(pageOneHlc),
+          hasMore: true,
+          cursor: { model: 'project', hlc: pageOneHlc, id: 'stale-page' },
+        }
+      }
+
+      if (request.since === '000000000000000000000000' && !request.cursor) {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          serverTime: pageOneHlc,
+          changes: {
+            project: [{ id: 'p1', userId: 'alice', title: 'first', changed: pageOneHlc }],
+          },
+          tombstones: [],
+          hasMore: true,
+          cursor: { model: 'project', hlc: pageOneHlc, id: 'p1' },
+        }
+      }
+
+      if (request.cursor?.id === 'p1') {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          serverTime: pageTwoHlc,
+          changes: {
+            project: [{ id: 'p2', userId: 'alice', title: 'second', changed: pageTwoHlc }],
+          },
+          tombstones: [],
+          hasMore: false,
+          cursor: null,
+        }
+      }
+
+      throw new Error(`unexpected recovery request: ${JSON.stringify(request)}`)
+    })
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+
+    await client.syncNow()
+    const result = await client.recover()
+
+    expect(result.pulled).toBe(2)
+    expect((await client.model('project').findMany()).map((row) => row.id).sort())
+      .toEqual(['p1', 'p2'])
+    expect(requests[2]).toMatchObject({
+      since: '000000000000000000000000',
+    })
+    expect(requests[2]?.cursor).toBeUndefined()
+  })
 })
 
 describe('client errors', () => {
+  it('runs versioned local row migrations before the first sync', async () => {
+    const migratingSchema: SyncSchema<Ctx> = {
+      project: {
+        ...schema.project,
+        version: 1,
+        migrations: {
+          1: (row) => ({ ...row, title: `${String(row.title)} migrated` }),
+        },
+      },
+    }
+    const db = memoryAdapter()
+    await db.ensureSyncTables(migratingSchema)
+    await db.upsertIfNewer({
+      model: 'project',
+      row: {
+        id: 'p1', userId: 'alice', title: 'legacy', changed: '000000000001000000000001',
+      },
+    })
+    const { transport } = mockTransport(() => emptyResponse('000001000000000000000000'))
+    const client = createSyncClient({
+      database: db,
+      schema: migratingSchema,
+      transport,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+
+    await client.start()
+    expect((await client.model('project').findOne({ id: 'p1' }))?.title).toBe('legacy migrated')
+  })
+
+  it('can start again after stop without losing the initialized local store', async () => {
+    const { transport } = mockTransport(() =>
+      emptyResponse('000001000000000000000000'),
+    )
+    const client = createSyncClient({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      syncOnWrite: false,
+      clock: { nodeId: 1, now: () => 1000 },
+    })
+    await client.start()
+    await client.model('project').insert({ id: 'p1', userId: 'alice', title: 'kept' })
+    client.stop()
+    await client.start()
+
+    expect((await client.status()).isStarted).toBe(true)
+    expect((await client.model('project').findOne({ id: 'p1' }))?.title).toBe('kept')
+  })
+
   it('lazy-inits on first use — no explicit start() needed', async () => {
     const { transport } = mockTransport(() =>
       emptyResponse('000001000000000000000000'),

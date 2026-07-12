@@ -51,6 +51,7 @@ export const CONFORMANCE_TEST_SCHEMA: SyncSchema = {
       changed: { type: 'string' },
     },
     scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
   tag: {
     fields: {
@@ -60,6 +61,7 @@ export const CONFORMANCE_TEST_SCHEMA: SyncSchema = {
       changed: { type: 'string' },
     },
     scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
 }
 
@@ -401,19 +403,67 @@ export const CONFORMANCE_TESTS: ConformanceTest[] = [
         scope: { userId: 'bob' },
       })
       const aliceTombs = await a.findTombstonesSince({
+        model: 'project',
         sinceHlc: hlcAt(0),
         limit: 100,
         scope: { userId: 'alice' },
       })
-      assertEquals(aliceTombs.length, 1)
-      assertEquals(aliceTombs[0]?.id, 'p-alice')
+      assertEquals(aliceTombs.tombstones.length, 1)
+      assertEquals(aliceTombs.tombstones[0]?.id, 'p-alice')
       const bobTombs = await a.findTombstonesSince({
+        model: 'project',
         sinceHlc: hlcAt(0),
         limit: 100,
         scope: { userId: 'bob' },
       })
-      assertEquals(bobTombs.length, 1)
-      assertEquals(bobTombs[0]?.id, 'p-bob')
+      assertEquals(bobTombs.tombstones.length, 1)
+      assertEquals(bobTombs.tombstones[0]?.id, 'p-bob')
+    },
+  },
+
+  {
+    name: 'findTombstonesSince drains a same-HLC page using the id tiebreaker',
+    tags: ['core', 'tombstone', 'cursor'],
+    run: async ({ factory }) => {
+      const a = await setup(factory)
+      for (const id of ['a', 'b', 'c']) {
+        await a.upsertTombstoneIfNewer({
+          model: 'project',
+          id,
+          hlc: hlcAt(100),
+          scope: { userId: 'u1' },
+        })
+      }
+      const first = await a.findTombstonesSince({
+        model: 'project', sinceHlc: hlcAt(0), limit: 2, scope: { userId: 'u1' },
+      })
+      assertEquals(first.tombstones.map((t) => t.id), ['a', 'b'])
+      assertEquals(first.nextCursor, { hlc: hlcAt(100), id: 'b' })
+      const second = await a.findTombstonesSince({
+        model: 'project', sinceHlc: hlcAt(0), limit: 2, cursor: first.nextCursor,
+        scope: { userId: 'u1' },
+      })
+      assertEquals(second.tombstones.map((t) => t.id), ['c'])
+      assertEquals(second.nextCursor, undefined)
+    },
+  },
+
+  {
+    name: 'claimOperation is idempotent and transaction-safe',
+    tags: ['core', 'operation', 'transaction'],
+    run: async ({ factory }) => {
+      const a = await setup(factory)
+      assertEquals(await a.claimOperation({ model: 'project', opId: 'op-1' }), true)
+      assertEquals(await a.claimOperation({ model: 'project', opId: 'op-1' }), false)
+      try {
+        await a.transaction(async (tx) => {
+          assertEquals(await tx.claimOperation({ model: 'project', opId: 'rolled-back' }), true)
+          throw new Error('rollback')
+        })
+      } catch {
+        // expected
+      }
+      assertEquals(await a.claimOperation({ model: 'project', opId: 'rolled-back' }), true)
     },
   },
 
@@ -437,12 +487,13 @@ export const CONFORMANCE_TESTS: ConformanceTest[] = [
       const removed = await a.gcTombstones({ olderThanHlc: hlcAt(100) })
       assertEquals(removed, 1)
       const all = await a.findTombstonesSince({
+        model: 'project',
         sinceHlc: hlcAt(0),
         limit: 100,
         scope: { userId: 'u1' },
       })
-      assertEquals(all.length, 1)
-      assertEquals(all[0]?.id, 'new')
+      assertEquals(all.tombstones.length, 1)
+      assertEquals(all.tombstones[0]?.id, 'new')
     },
   },
 

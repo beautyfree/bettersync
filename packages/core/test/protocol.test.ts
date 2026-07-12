@@ -4,6 +4,7 @@ import {
   HLC_ZERO,
   isSyncError,
   parseSyncRequest,
+  parseSyncResponse,
   PROTOCOL_VERSION,
   serializeSyncResponse,
   SchemaViolationError,
@@ -30,12 +31,27 @@ describe('parseSyncRequest', () => {
       cursor: { model: 'project', hlc: VALID_HLC, id: 'abc' },
       limit: 100,
       forceFetch: ['project'],
-      changes: { project: [{ id: 'p1', changed: VALID_HLC }] },
+      changes: { project: [{ opId: 'op-project-1', row: { id: 'p1', changed: VALID_HLC } }] },
       tombstones: [
-        { model: 'project', id: 'gone', hlc: VALID_HLC, scope: { userId: 'u1' } },
+        {
+          opId: 'op-delete-1',
+          tombstone: { model: 'project', id: 'gone', hlc: VALID_HLC, scope: { userId: 'u1' } },
+        },
       ],
     })
     expect(req.cursor?.id).toBe('abc')
+    expect(req.changes?.project).toHaveLength(1)
+    expect(req.tombstones).toHaveLength(1)
+  })
+
+  it('accepts legacy v1 rows and tombstones during rolling server upgrades', () => {
+    const req = parseSyncRequest({
+      protocolVersion: PROTOCOL_VERSION,
+      clientTime: VALID_HLC,
+      since: HLC_ZERO,
+      changes: { project: [{ id: 'p1', changed: VALID_HLC }] },
+      tombstones: [{ model: 'project', id: 'gone', hlc: VALID_HLC, scope: { userId: 'u1' } }],
+    })
     expect(req.changes?.project).toHaveLength(1)
     expect(req.tombstones).toHaveLength(1)
   })
@@ -106,6 +122,31 @@ describe('parseSyncRequest', () => {
         limit: -1,
       }),
     ).toThrow(SchemaViolationError)
+  })
+})
+
+describe('parseSyncResponse', () => {
+  it('accepts a valid empty response', () => {
+    const response = parseSyncResponse({
+      protocolVersion: PROTOCOL_VERSION,
+      serverTime: VALID_HLC,
+      changes: {},
+      tombstones: [],
+      hasMore: false,
+      cursor: null,
+    })
+    expect(response.hasMore).toBe(false)
+  })
+
+  it('rejects a malformed changes payload before client storage', () => {
+    expect(() => parseSyncResponse({
+      protocolVersion: PROTOCOL_VERSION,
+      serverTime: VALID_HLC,
+      changes: { project: 'not rows' },
+      tombstones: [],
+      hasMore: false,
+      cursor: null,
+    })).toThrow(SchemaViolationError)
   })
 })
 

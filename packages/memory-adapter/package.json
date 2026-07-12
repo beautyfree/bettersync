@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/memory-adapter",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "In-memory SyncAdapter implementation for tests, prototypes, and the conformance suite",
   "license": "Apache-2.0",
   "type": "module",

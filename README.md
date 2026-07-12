@@ -37,6 +37,7 @@ export const sync = betterSync({
         changed:   { type: 'string' },
       },
       scope: (ctx) => ({ userId: ctx.userId }),
+      tombstoneScope: ['userId'],
     },
   },
 })
@@ -64,8 +65,46 @@ export const POST = toNextJsHandler(sync, {
 ### 4. Create Database Tables
 
 ```bash
-npx bettersync generate  # coming soon — for now, create tables manually
+npx @bettersync/cli generate --config src/lib/sync.ts --output migrations/bettersync.sql
 ```
+
+Review generated SQL, commit it, then apply it through your normal database
+migration system. `ensureSyncTables()` creates only bettersync internal tables;
+it never mutates application tables in production.
+
+For an existing table, generate a reviewable HLC migration:
+
+```bash
+npx @bettersync/cli generate --alter --backfill --config src/lib/sync.ts --output migrations/add-bettersync.sql
+```
+
+### Column Mapping
+
+Keep logical TypeScript names while using existing snake_case tables:
+
+```ts
+project: {
+  fields: {
+    id: { type: 'string', primaryKey: true },
+    userId: { type: 'string', columnName: 'user_id' },
+    displayName: { type: 'string', columnName: 'display_name' },
+    changed: { type: 'string' },
+  },
+}
+```
+
+Raw adapters map CRUD, scope, sort, sync rows, and pagination fields. Keep
+`changed` unchanged by default. If an existing HLC column has another physical
+name, configure that physical `hlcField` on the raw adapter; mapping otherwise
+fails closed rather than creating a second clock column.
+
+### Rolling Upgrades And Data Safety
+
+Deploy server before client. Server accepts legacy v1 plain rows/tombstones and
+new idempotent operation envelopes in the same v1 protocol. Never reset or
+delete a local database during an upgrade. Schema row migrations and pending
+outbox rewrites run in one local transaction; database DDL stays a reviewed,
+explicit migration from the CLI output.
 
 ### 5. Create Client
 
@@ -176,6 +215,59 @@ Client (PGlite)                    Server (Postgres)
 - LWW: later HLC wins. Deterministic across all clients.
 - Tombstones carry denormalized scope (no cross-tenant ID leak)
 - Compound (changed, id) cursor for stable pagination
+- Optional realtime events only wake clients up; clients still pull scoped rows through `syncNow()`
+
+### Realtime Wake-Ups
+
+Polling is the default fallback, but apps can add SSE/WebSocket/push wake-ups for faster cross-device freshness.
+Realtime events intentionally carry no row data. They only tell the client that something changed, then the client calls
+`syncNow({ drain: true })` and receives scoped data through the normal sync protocol.
+
+For large mobile fleets, do not keep every app process connected to SSE. Use `realtime.publish()` as a bridge to
+APNs/FCM/silent push or a queue-backed fanout service. SSE/EventSource is useful for web, dev tools, admin panels, and
+small always-online cohorts. Polling remains the correctness fallback.
+
+```ts
+import { createInMemoryRealtimeBus, createSyncServer } from 'bettersync/server'
+
+const realtime = createInMemoryRealtimeBus<AuthCtx>({
+  topic: (ctx) => ctx.familyId,
+  debounceMs: 100,
+  maxSubscribers: 10_000,
+})
+
+const sync = createSyncServer({
+  schema,
+  database,
+  auth,
+  realtime,
+})
+
+app.post('/api/sync', (c) => sync.handler(c.req.raw))
+app.get('/api/sync/events', (c) => realtime.handler(auth)(c.req.raw))
+```
+
+```ts
+import { createSyncClient } from 'bettersync/client'
+
+const client = createSyncClient({
+  database,
+  schema,
+  syncUrl: '/api/sync',
+  eventsUrl: '/api/sync/events',
+})
+```
+
+React Native does not ship `EventSource` by default. In RN/Expo, pass a custom `realtime.subscribe` transport or an
+EventSource polyfill.
+
+Production shape:
+
+- Server applies writes once, commits, then fires one model-only wake-up event.
+- Wake-up events are coalesced per topic to avoid notification storms.
+- Mobile push notification should only wake the app to run `syncNow({ drain: true })`.
+- No row payloads go through push. Authz and scoping stay in the sync endpoint.
+- If push delivery is delayed or dropped, next poll/app foreground still catches up.
 
 ## Status
 
@@ -188,6 +280,7 @@ Alpha. API may change before v1.0.
 - [x] PGlite adapter (19/19 conformance, no Docker)
 - [x] Memory adapter + shared conformance suite (19 tests)
 - [x] React: SyncProvider, useSync, useSyncQuery, SyncDevtools
+- [x] Realtime wake-up events via custom transport or SSE/EventSource
 - [x] Next.js: toNextJsHandler
 - [x] Hono: toHonoHandler (Node / Bun / Workers / Deno)
 - [x] Node: toNodeHandler (Express / Fastify / Nest)
@@ -195,8 +288,8 @@ Alpha. API may change before v1.0.
 - [x] expo-sqlite adapter — offline-first React Native / Expo
 - [x] Single meta-package with subpath exports
 - [x] Example Next.js app with two-tab sync demo
-- [ ] CLI: `npx bettersync init` / `generate` / `migrate`
-- [ ] recover() for stale clients
+- [x] CLI: `npx @bettersync/cli init` / `generate`
+- [x] recover() for stale clients
 - [ ] watch() reactive queries
 - [ ] Express, Elysia, Fastify dedicated handlers
 

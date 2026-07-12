@@ -10,12 +10,15 @@ import {
   type AdapterCapabilities,
   type FindChangedSinceParams,
   type FindChangedSinceResult,
+  type FindTombstonesSinceParams,
+  type FindTombstonesSinceResult,
   type Row,
   type Scope,
   type SyncAdapter,
   type SyncSchema,
   type Tombstone,
   type Where,
+  columnMappingAdapter,
   getModelTableName,
   getPrimaryKey,
   shouldApplyTombstone,
@@ -35,6 +38,7 @@ const CAPABILITIES: AdapterCapabilities = {
 }
 
 const TOMBSTONE_TABLE = 'sync_tombstones'
+const OPERATION_TABLE = 'sync_operations'
 
 export interface PgAdapterOptions {
   hlcField?: string
@@ -202,6 +206,14 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         await conn.query(
           `CREATE INDEX IF NOT EXISTS "idx_tombstones_hlc" ON "${TOMBSTONE_TABLE}" (hlc)`,
         )
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS "${OPERATION_TABLE}" (
+            model TEXT NOT NULL,
+            op_id TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (model, op_id)
+          )
+        `)
       },
 
       async create({ model, data }) {
@@ -349,19 +361,46 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
         return wasExisting ? 'updated' : 'inserted'
       },
 
-      async findTombstonesSince({ sinceHlc, limit: lim, scope }) {
+      async findTombstonesSince(
+        params: FindTombstonesSinceParams,
+      ): Promise<FindTombstonesSinceResult> {
+        const { model, sinceHlc, limit: lim, cursor, scope } = params
+        const conditions = ['model = $1']
+        const values: unknown[] = [model]
+        let index = 2
         if (scope && Object.keys(scope).length > 0) {
-          const rows = await q(
-            `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE hlc > $1 AND scope @> $2::jsonb ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-            [sinceHlc, JSON.stringify(scope)],
-          )
-          return rows.map(toTombstone)
+          conditions.push(`scope @> $${index++}::jsonb`)
+          values.push(JSON.stringify(scope))
+        }
+        if (cursor) {
+          conditions.push(`(hlc, id) > ($${index}, $${index + 1})`)
+          values.push(cursor.hlc, cursor.id)
+        } else {
+          conditions.push(`hlc > $${index}`)
+          values.push(sinceHlc)
         }
         const rows = await q(
-          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE hlc > $1 ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-          [sinceHlc],
+          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE ${conditions.join(' AND ')} ORDER BY hlc ASC, id ASC LIMIT ${lim + 1}`,
+          values,
         )
-        return rows.map(toTombstone)
+        const hasMore = rows.length > lim
+        const page = hasMore ? rows.slice(0, lim) : rows
+        const result: FindTombstonesSinceResult = { tombstones: page.map(toTombstone) }
+        if (hasMore && page.length > 0) {
+          const last = page[page.length - 1]!
+          result.nextCursor = { hlc: String(last.hlc), id: String(last.id) }
+        }
+        return result
+      },
+
+      async claimOperation({ model, opId }) {
+        const rows = await q(
+          `INSERT INTO "${OPERATION_TABLE}" (model, op_id) VALUES ($1, $2)
+           ON CONFLICT (model, op_id) DO NOTHING
+           RETURNING op_id`,
+          [model, opId],
+        )
+        return rows.length > 0
       },
 
       async upsertTombstoneIfNewer(t) {
@@ -422,7 +461,7 @@ export function pgAdapter(pool: PgPoolLike, opts: PgAdapterOptions = {}): SyncAd
     return adapter
   }
 
-  return makeAdapter(pool)
+  return columnMappingAdapter(makeAdapter(pool), hlcField)
 }
 
 function sqlType(type: string | readonly string[]): string {

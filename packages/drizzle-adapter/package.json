@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/drizzle-adapter",
-  "version": "0.0.3",
+  "version": "1.0.0-rc.1",
   "description": "Drizzle ORM adapter for bettersync (Postgres-specific in v0.1)",
   "license": "Apache-2.0",
   "type": "module",

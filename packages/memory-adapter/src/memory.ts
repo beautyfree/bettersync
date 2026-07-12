@@ -15,6 +15,8 @@ import {
   type AdapterCursor,
   type FindChangedSinceParams,
   type FindChangedSinceResult,
+  type FindTombstonesSinceParams,
+  type FindTombstonesSinceResult,
   type ModelDef,
   type Row,
   type Scope,
@@ -52,6 +54,7 @@ interface InternalState {
   schema: SyncSchema | null
   store: Map<string, Map<string, Row>>
   tombstones: Map<string, Tombstone>
+  operations: Set<string>
   hlcField: string
 }
 
@@ -63,6 +66,7 @@ export function memoryAdapter(opts: MemoryAdapterOptions = {}): SyncAdapter {
     schema: null,
     store: new Map(),
     tombstones: new Map(),
+    operations: new Set(),
     hlcField: opts.hlcField ?? 'changed',
   }
   return createAdapter(state)
@@ -99,7 +103,7 @@ function cloneTombstone(t: Tombstone): Tombstone {
   return { ...t, scope: { ...t.scope } }
 }
 
-function snapshotState(state: InternalState): Pick<InternalState, 'store' | 'tombstones'> {
+function snapshotState(state: InternalState): Pick<InternalState, 'store' | 'tombstones' | 'operations'> {
   const store = new Map<string, Map<string, Row>>()
   for (const [model, table] of state.store) {
     const inner = new Map<string, Row>()
@@ -112,15 +116,16 @@ function snapshotState(state: InternalState): Pick<InternalState, 'store' | 'tom
   for (const [key, t] of state.tombstones) {
     tombstones.set(key, cloneTombstone(t))
   }
-  return { store, tombstones }
+  return { store, tombstones, operations: new Set(state.operations) }
 }
 
 function restoreState(
   state: InternalState,
-  snapshot: Pick<InternalState, 'store' | 'tombstones'>,
+  snapshot: Pick<InternalState, 'store' | 'tombstones' | 'operations'>,
 ): void {
   state.store = snapshot.store
   state.tombstones = snapshot.tombstones
+  state.operations = snapshot.operations
 }
 
 function createAdapter(state: InternalState): SyncAdapter {
@@ -330,11 +335,16 @@ function createAdapter(state: InternalState): SyncAdapter {
       return { inserted, updated, skipped }
     },
 
-    async findTombstonesSince({ sinceHlc, limit, scope }) {
+    async findTombstonesSince({ model, sinceHlc, limit, cursor, scope }: FindTombstonesSinceParams): Promise<FindTombstonesSinceResult> {
       const filtered: Tombstone[] = []
       for (const t of state.tombstones.values()) {
+        if (t.model !== model) continue
         if (compareHlc(t.hlc, sinceHlc) <= 0) continue
         if (!matchesScope(t.scope, scope)) continue
+        if (cursor) {
+          const hlcCmp = compareHlc(t.hlc, cursor.hlc)
+          if (hlcCmp < 0 || (hlcCmp === 0 && t.id.localeCompare(cursor.id) <= 0)) continue
+        }
         filtered.push(t)
       }
       filtered.sort((a, b) => {
@@ -342,7 +352,13 @@ function createAdapter(state: InternalState): SyncAdapter {
         if (c !== 0) return c
         return a.id.localeCompare(b.id)
       })
-      return filtered.slice(0, limit).map(cloneTombstone)
+      const hasMore = filtered.length > limit
+      const tombstones = filtered.slice(0, limit).map(cloneTombstone)
+      const last = tombstones.at(-1)
+      return {
+        tombstones,
+        ...(hasMore && last ? { nextCursor: { hlc: last.hlc, id: last.id } } : {}),
+      }
     },
 
     async upsertTombstoneIfNewer(t) {
@@ -353,6 +369,13 @@ function createAdapter(state: InternalState): SyncAdapter {
       // Also remove the row if present — delete semantics
       const table = state.store.get(t.model)
       if (table) table.delete(t.id)
+      return true
+    },
+
+    async claimOperation({ model, opId }) {
+      const key = `${model}:${opId}`
+      if (state.operations.has(key)) return false
+      state.operations.add(key)
       return true
     },
 

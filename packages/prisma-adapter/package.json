@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/prisma-adapter",
-  "version": "0.0.2",
+  "version": "1.0.0-rc.1",
   "description": "Prisma adapter for bettersync (Postgres)",
   "license": "Apache-2.0",
   "type": "module",

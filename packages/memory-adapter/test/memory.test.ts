@@ -89,8 +89,12 @@ describe('memoryAdapter delete behaviour', () => {
     await a.delete({ model: 'project', where: { id: 'p1' } })
     const after = await a.findOne({ model: 'project', where: { id: 'p1' } })
     expect(after).toBeNull()
-    const tombs = await a.findTombstonesSince({ sinceHlc: hlc(0), limit: 100 })
-    expect(tombs.length).toBe(0)
+    const tombs = await a.findTombstonesSince({
+      model: 'project',
+      sinceHlc: hlc(0),
+      limit: 100,
+    })
+    expect(tombs.tombstones).toHaveLength(0)
   })
 
   it('upsertTombstoneIfNewer clears the row even if the HLC is equal', async () => {

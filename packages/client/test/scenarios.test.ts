@@ -36,7 +36,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { SyncRequest, SyncSchema } from '@bettersync/core'
+import { decodeHlc, encodeHlc, PROTOCOL_VERSION, type SyncRequest, type SyncSchema } from '@bettersync/core'
 import { memoryAdapter } from '@bettersync/memory-adapter'
 import { createSyncServer, type SyncServerHooks } from '@bettersync/server'
 import { createSyncClient, type Transport } from '../src/index'
@@ -44,6 +44,11 @@ import { createSyncClient, type Transport } from '../src/index'
 interface Ctx {
   userId: string
   familyId: string
+}
+
+function nextHlc(value: string): string {
+  const parsed = decodeHlc(value)
+  return encodeHlc({ ...parsed, logical: parsed.logical + 1 })
 }
 
 /** Feeding-shaped model — open-ended row = `duration: null`. */
@@ -59,6 +64,7 @@ const schema: SyncSchema<Ctx> = {
       changed: { type: 'string' },
     },
     scope: (ctx) => ({ familyId: ctx.familyId }),
+    tombstoneScope: ['familyId'],
   },
 }
 
@@ -129,9 +135,8 @@ const openRowUniquenessHook: SyncServerHooks<Ctx> = {
       await tx.upsertTombstoneIfNewer({
         model: 'feeding',
         id: String(o.id),
-        hlc: row.changed + '_t', // any HLC > row.changed works — we
-        // reuse row.changed lexicographically since the test memory
-        // adapter only compares strings.
+        // Keep synthetic hook writes on the real HLC wire format.
+        hlc: nextHlc(String(row.changed)),
         scope: { familyId: String(row.familyId) },
       })
     }
@@ -256,18 +261,21 @@ describe('push + pull in the same syncNow', () => {
 
     await server.handleSync(
       {
-        protocolVersion: '1.0.0',
+        protocolVersion: PROTOCOL_VERSION,
         clientTime: '000000000000000000100000',
         since: '000000000000000000000000',
         changes: {
           feeding: [{
-            id: 'server-row',
-            familyId: 'fam1',
-            childId: 'kid',
-            type: 'breast_left',
-            timestamp: 1000,
-            duration: 7,
-            changed: '000000000000000000100000',
+            opId: 'server-row-seed',
+            row: {
+              id: 'server-row',
+              familyId: 'fam1',
+              childId: 'kid',
+              type: 'breast_left',
+              timestamp: 1000,
+              duration: 7,
+              changed: '000000000000000000100000',
+            },
           }],
         },
       },
@@ -433,6 +441,7 @@ describe('beforeWrite hook authz', () => {
           changed: { type: 'string' },
         },
         scope: (ctx) => ({ familyId: ctx.familyId }),
+        tombstoneScope: ['familyId'],
       },
     }
 
@@ -505,6 +514,7 @@ describe('beforeWrite hook authz', () => {
           changed: { type: 'string' },
         },
         scope: (ctx) => ({ familyId: ctx.familyId }),
+        tombstoneScope: ['familyId'],
       },
     }
 
@@ -593,6 +603,7 @@ describe('server tombstone reaches other devices', () => {
           changed: { type: 'string' },
         },
         scope: (ctx) => ({ id: ctx.userId }),
+        tombstoneScope: ['id'],
       },
       feeding: {
         fields: {
@@ -605,6 +616,7 @@ describe('server tombstone reaches other devices', () => {
           changed: { type: 'string' },
         },
         scope: (ctx) => ({ familyId: ctx.familyId }),
+        tombstoneScope: ['familyId'],
       },
     }
 
@@ -718,6 +730,40 @@ describe('localOnly mode + enableSync', () => {
     })
     await client.start()
     await expect(client.enableSync({})).rejects.toThrow(/transport|syncUrl/)
+  })
+
+  it('disableSync keeps local writes and resumes their delivery after re-authentication', async () => {
+    const serverDb = memoryAdapter()
+    await serverDb.ensureSyncTables(schema)
+    const server = createSyncServer<Ctx>({
+      database: serverDb,
+      schema,
+      clock: { nodeId: 0xaaaaaaaa, now: () => 10_000 },
+    })
+    const ctx: Ctx = { userId: 'alice', familyId: 'fam1' }
+    const transport: Transport = async (req) => server.handleSync(req, ctx)
+    const client = createSyncClient<Ctx>({
+      database: memoryAdapter(),
+      schema,
+      transport,
+      clock: { nodeId: 0xbbbbbbbb, now: () => 1_000 },
+    })
+    await client.start()
+    await client.syncNow()
+
+    client.disableSync()
+    expect(client.isLocalOnly()).toBe(true)
+    await client.model('feeding').insert({
+      id: 'kept-offline', familyId: 'fam1', childId: 'kid', type: 'bottle',
+      timestamp: 1_000, duration: 60,
+    }, { sync: 'remote' })
+
+    expect(await serverDb.findMany({ model: 'feeding' })).toHaveLength(0)
+    expect((await client.status()).pendingCount).toBe(1)
+
+    await client.enableSync({ transport })
+    expect(await serverDb.findMany({ model: 'feeding' })).toHaveLength(1)
+    expect((await client.status()).pendingCount).toBe(0)
   })
 
   it('local-only client receives pulled rows after enableSync (restore on new device)', async () => {

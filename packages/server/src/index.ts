@@ -8,12 +8,17 @@
  * and after-commit hooks.
  */
 
-export { createSyncServer } from './server'
+export { createInMemoryRealtimeBus, createSyncServer } from './server'
 export type {
   AuthResolver,
+  CreateInMemoryRealtimeBusOptions,
   CreateSyncServerOptions,
   SyncServer,
   SyncServerHooks,
+  SyncRealtimeBus,
+  SyncRealtimePublisher,
+  SyncRealtimePublishArgs,
+  SyncRealtimeUnsubscribe,
   HookChangeDescriptor,
   AfterWriteInTransactionArgs,
   AfterCommitArgs,

@@ -21,6 +21,7 @@ function createSync() {
             changed: { type: 'string' },
           },
           scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+          tombstoneScope: ['userId'],
         },
       })
       return db
@@ -36,6 +37,7 @@ function createSync() {
           changed: { type: 'string' },
         },
         scope: (ctx: { userId: string }) => ({ userId: ctx.userId }),
+        tombstoneScope: ['userId'],
       },
     },
   })

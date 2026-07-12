@@ -57,6 +57,7 @@ export {
   type ForcePushRequest,
   type ForcePushResponse,
   type PaginationCursor,
+  type SyncRealtimeEvent,
   type SyncRequest,
   type SyncResponse,
   type Tombstone,
@@ -92,18 +93,27 @@ export { betterSync } from './bettersync'
 export type { BetterSyncOptions } from './bettersync'
 
 // ─── Server ─────────────────────────────────────────────────────────
-export { createSyncServer } from '@bettersync/server'
+export { createInMemoryRealtimeBus, createSyncServer } from '@bettersync/server'
 export type {
+  CreateInMemoryRealtimeBusOptions,
   CreateSyncServerOptions,
+  SyncRealtimeBus,
+  SyncRealtimePublisher,
+  SyncRealtimePublishArgs,
+  SyncRealtimeUnsubscribe,
   SyncServer,
   SyncServerHooks,
 } from '@bettersync/server'
 
 // ─── Client ─────────────────────────────────────────────────────────
-export { createSyncClient } from '@bettersync/client'
+export { createEventSourceRealtime, createSyncClient } from '@bettersync/client'
 export type {
   CreateSyncClientOptions,
   ModelAccessor,
+  RealtimeHandlers,
+  RealtimeSubscribe,
+  RealtimeTransport,
+  RealtimeUnsubscribe,
   SyncClient,
   SyncNowOptions,
   SyncResult,

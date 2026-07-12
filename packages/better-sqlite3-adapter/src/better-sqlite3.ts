@@ -15,12 +15,15 @@ import {
   type AdapterCapabilities,
   type FindChangedSinceParams,
   type FindChangedSinceResult,
+  type FindTombstonesSinceParams,
+  type FindTombstonesSinceResult,
   type Row,
   type Scope,
   type SyncAdapter,
   type SyncSchema,
   type Tombstone,
   type Where,
+  columnMappingAdapter,
   getModelTableName,
   getPrimaryKey,
   shouldApplyTombstone,
@@ -40,6 +43,7 @@ const CAPABILITIES: AdapterCapabilities = {
 }
 
 const TOMBSTONE_TABLE = 'sync_tombstones'
+const OPERATION_TABLE = 'sync_operations'
 
 export interface BetterSqlite3AdapterOptions {
   hlcField?: string
@@ -131,9 +135,11 @@ export function betterSqlite3Adapter(
             return `"${name}" ${typ}${notNull}`
           })
           conn.exec(`CREATE TABLE IF NOT EXISTS "${table}" (${colDefs.join(', ')})`)
-          conn.exec(
-            `CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`,
-          )
+          if (!modelKey.startsWith('_sync_')) {
+            conn.exec(
+              `CREATE INDEX IF NOT EXISTS "idx_${table}_sync" ON "${table}" ("${hlcField}", "${pkName}")`,
+            )
+          }
         }
         conn.exec(`
           CREATE TABLE IF NOT EXISTS "${TOMBSTONE_TABLE}" (
@@ -148,6 +154,14 @@ export function betterSqlite3Adapter(
         conn.exec(
           `CREATE INDEX IF NOT EXISTS "idx_tombstones_hlc" ON "${TOMBSTONE_TABLE}" (hlc)`,
         )
+        conn.exec(`
+          CREATE TABLE IF NOT EXISTS "${OPERATION_TABLE}" (
+            model TEXT NOT NULL,
+            op_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (model, op_id)
+          )
+        `)
       },
 
       async create({ model, data }) {
@@ -300,26 +314,47 @@ export function betterSqlite3Adapter(
         return wasExisting ? 'updated' : 'inserted'
       },
 
-      async findTombstonesSince({ sinceHlc, limit: lim, scope }) {
+      async findTombstonesSince(
+        params: FindTombstonesSinceParams,
+      ): Promise<FindTombstonesSinceResult> {
+        const { model, sinceHlc, limit: lim, cursor, scope } = params
+        const conditions: string[] = ['model = ?']
+        const values: unknown[] = [model]
         if (scope && Object.keys(scope).length > 0) {
-          // Use json_extract for scope matching since SQLite has no @> operator
-          const conditions: string[] = ['hlc > ?']
-          const params: unknown[] = [sinceHlc]
-          for (const [k, v] of Object.entries(scope)) {
+          for (const [key, value] of Object.entries(scope)) {
             conditions.push(`json_extract(scope, '$.' || ?) = ?`)
-            params.push(k, v)
+            values.push(key, value)
           }
-          const rows = all(
-            `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE ${conditions.join(' AND ')} ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-            params,
-          )
-          return rows.map(toTombstone)
+        }
+        if (cursor) {
+          conditions.push('(hlc > ? OR (hlc = ? AND id > ?))')
+          values.push(cursor.hlc, cursor.hlc, cursor.id)
+        } else {
+          conditions.push('hlc > ?')
+          values.push(sinceHlc)
         }
         const rows = all(
-          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE hlc > ? ORDER BY hlc ASC, id ASC LIMIT ${lim}`,
-          [sinceHlc],
+          `SELECT * FROM "${TOMBSTONE_TABLE}" WHERE ${conditions.join(' AND ')} ORDER BY hlc ASC, id ASC LIMIT ${lim + 1}`,
+          values,
         )
-        return rows.map(toTombstone)
+        const hasMore = rows.length > lim
+        const page = hasMore ? rows.slice(0, lim) : rows
+        const result: FindTombstonesSinceResult = { tombstones: page.map(toTombstone) }
+        if (hasMore && page.length > 0) {
+          const last = page[page.length - 1]!
+          result.nextCursor = { hlc: String(last.hlc), id: String(last.id) }
+        }
+        return result
+      },
+
+      async claimOperation({ model, opId }) {
+        return (
+          run(
+            `INSERT INTO "${OPERATION_TABLE}" (model, op_id) VALUES (?, ?)
+             ON CONFLICT (model, op_id) DO NOTHING`,
+            [model, opId],
+          ).changes > 0
+        )
       },
 
       async upsertTombstoneIfNewer(t) {
@@ -379,7 +414,7 @@ export function betterSqlite3Adapter(
     return adapter
   }
 
-  return makeAdapter(db)
+  return columnMappingAdapter(makeAdapter(db), hlcField)
 }
 
 function sqlType(type: string | readonly string[]): string {

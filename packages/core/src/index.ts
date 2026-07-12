@@ -50,17 +50,22 @@ export type { HLClockOptions, HLCParts } from './hlc'
 export {
   emptySyncResponse,
   parseSyncRequest,
+  parseSyncResponse,
   PROTOCOL_VERSION,
   serializeSyncResponse,
 } from './protocol'
 export type {
   ChangeRow,
+  ClientChangeSet,
+  DeleteOperation,
   ForcePushRequest,
   ForcePushResponse,
   PaginationCursor,
+  SyncRealtimeEvent,
   SyncRequest,
   SyncResponse,
   Tombstone,
+  UpsertOperation,
 } from './protocol'
 
 // ─── Schema ─────────────────────────────────────────────────────────
@@ -95,9 +100,12 @@ export type {
   BatchUpsertResult,
   FindChangedSinceParams,
   FindChangedSinceResult,
+  FindTombstonesSinceParams,
+  FindTombstonesSinceResult,
   SyncAdapter,
   UpsertResult,
 } from './adapter'
+export { columnMappingAdapter } from './column-mapping-adapter'
 
 // ─── Merge ──────────────────────────────────────────────────────────
 export {

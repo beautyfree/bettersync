@@ -28,6 +28,7 @@ const schema: SyncSchema<Ctx> = {
       changed: { type: 'string' },
     },
     scope: (ctx) => ({ userId: ctx.userId }),
+    tombstoneScope: ['userId'],
   },
 }
 

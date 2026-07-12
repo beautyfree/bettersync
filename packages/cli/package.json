@@ -1,6 +1,6 @@
 {
   "name": "@bettersync/cli",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "CLI for bettersync — generate migrations, scaffold projects",
   "license": "Apache-2.0",
   "type": "module",
