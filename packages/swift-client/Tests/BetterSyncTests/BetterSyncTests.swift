@@ -106,6 +106,18 @@ private actor RecordingTransport: SyncTransport {
   #expect(requests[1].cursor == cursor)
 }
 
+@Test func bootstrapAvoidsHistoricalPullForProjectionOnlyClient() async throws {
+  let storage = InMemorySyncStateStore()
+  let client = SyncClient(
+    transport: SequenceTransport(responses: []),
+    stateStore: storage,
+    nodeID: 1
+  )
+
+  try await client.bootstrapToNowIfNeeded()
+  #expect((try await client.currentState()).lastSyncedHLC > .zero)
+}
+
 private actor SequenceTransport: SyncTransport {
   private var responses: [SyncResponse]
   private var requests: [SyncRequest] = []

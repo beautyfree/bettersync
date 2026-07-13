@@ -157,6 +157,19 @@ public actor SyncClient {
     return changed
   }
 
+  /// Mark a fresh client as already caught up. Use only when another scoped
+  /// projection is authoritative for reads (for example a compact widget
+  /// snapshot) and this client is used for durable writes. This prevents a
+  /// widget extension from downloading an entire family journal on first tap.
+  public func bootstrapToNowIfNeeded() async throws {
+    var localState = try await loadedState()
+    guard localState.lastSyncedHLC == .zero,
+          localState.pendingCursor == nil,
+          localState.pendingOperations.isEmpty else { return }
+    localState.lastSyncedHLC = try localState.clock.tick()
+    try await persist(localState)
+  }
+
   @discardableResult
   public func enqueueDelete(
     model: String,
